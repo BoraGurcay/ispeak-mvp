@@ -22,6 +22,7 @@ export default function SettingsPage() {
   return (
     <div className="container">
       <div className="card">
+
         <div className="h1">Settings</div>
 
         <label className="small muted">Text size</label>
@@ -46,6 +47,7 @@ export default function SettingsPage() {
         <div className="hr" />
 
         <PushTestButton />
+
       </div>
     </div>
   );
