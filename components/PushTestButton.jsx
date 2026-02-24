@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import supabase from "../lib/supabaseClient"; // adjust if your path differs
 
 function urlBase64ToUint8Array(base64String) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -13,9 +15,23 @@ function urlBase64ToUint8Array(base64String) {
 
 export default function PushTestButton() {
   const [status, setStatus] = useState("");
+  const router = useRouter();
 
   async function onClick() {
     try {
+      setStatus("Checking login…");
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      // OPTION C behavior: practice is open, but push requires login
+      if (!user) {
+        setStatus("Please sign in to enable notifications.");
+        router.push("/login?next=/settings");
+        return;
+      }
+
       setStatus("Requesting permission…");
 
       if (!("serviceWorker" in navigator)) throw new Error("Service Worker not supported in this browser.");
@@ -29,12 +45,22 @@ export default function PushTestButton() {
 
       setStatus("Subscribing…");
       const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-      if (!publicKey) throw new Error("Missing NEXT_PUBLIC_VAPID_PUBLIC_KEY in .env.local");
+      if (!publicKey) throw new Error("Missing NEXT_PUBLIC_VAPID_PUBLIC_KEY");
 
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(publicKey),
       });
+
+      setStatus("Saving subscription…");
+      const saveRes = await fetch("/api/push/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subscription: sub }),
+      });
+
+      const saveJson = await saveRes.json().catch(() => ({}));
+      if (!saveRes.ok) throw new Error(saveJson.error || "Failed to save subscription");
 
       setStatus("Sending test push…");
       const res = await fetch("/api/push/test", {

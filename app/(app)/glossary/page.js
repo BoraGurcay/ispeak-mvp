@@ -8,11 +8,18 @@ const domains = [
   { value: "family", label: "Family" },
 ];
 
+const languages = [
+  { value: "tr", label: "Turkish (TR)" },
+  { value: "fr", label: "French (FR)" },
+];
+
 export default function Glossary() {
   const [q, setQ] = useState("");
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [status, setStatus] = useState("");
+
+  // remember selected target language
+  const [targetLang, setTargetLang] = useState("tr");
 
   const [form, setForm] = useState({
     id: null,
@@ -21,6 +28,17 @@ export default function Glossary() {
     target_text: "",
     notes: "",
   });
+
+  useEffect(() => {
+    const saved = localStorage.getItem("ispeak_target_lang");
+    if (saved === "tr" || saved === "fr") setTargetLang(saved);
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("ispeak_target_lang", targetLang);
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetLang]);
 
   const filtered = useMemo(() => {
     const t = q.trim().toLowerCase();
@@ -34,53 +52,41 @@ export default function Glossary() {
 
   async function load() {
     setLoading(true);
+
     const { data: userRes } = await supabase.auth.getUser();
     const user = userRes?.user;
-    if (!user) return;
+    if (!user) {
+      setItems([]);
+      setLoading(false);
+      return;
+    }
 
+    // Load PERSONAL terms for selected language
     const { data, error } = await supabase
       .from("user_terms")
       .select("*")
+      .eq("source_lang", "en")
+      .eq("target_lang", targetLang)
       .order("created_at", { ascending: false });
 
     if (!error) setItems(data || []);
     setLoading(false);
   }
 
-  useEffect(() => {
-    load();
-  }, []);
-
   async function upsert(e) {
     e.preventDefault();
-
-    const source = form.source_text.trim();
-    const target = form.target_text.trim();
-
-    if (!source || !target) return;
-
-    // duplicate check
-    const { data: existing } = await supabase
-      .from("user_terms")
-      .select("id")
-      .ilike("source_text", source)
-      .ilike("target_text", target)
-      .limit(1);
-
-    if (existing && existing.length > 0 && !form.id) {
-      setStatus("⚠️ This term already exists.");
-      return;
-    }
+    if (!form.source_text.trim() || !form.target_text.trim()) return;
 
     const payload = {
+      source_lang: "en",
+      target_lang: targetLang,
       domain: form.domain,
-      source_text: source,
-      target_text: target,
+      source_text: form.source_text.trim(),
+      target_text: form.target_text.trim(),
       notes: form.notes.trim() || null,
     };
 
     let res;
-
     if (form.id) {
       res = await supabase.from("user_terms").update(payload).eq("id", form.id);
     } else {
@@ -88,23 +94,15 @@ export default function Glossary() {
     }
 
     if (res.error) {
-      setStatus(res.error.message);
+      alert(res.error.message);
       return;
     }
 
-    setForm({
-      id: null,
-      domain: "court",
-      source_text: "",
-      target_text: "",
-      notes: "",
-    });
-
-    setStatus("");
+    setForm({ id: null, domain: "court", source_text: "", target_text: "", notes: "" });
     await load();
   }
 
-  async function edit(it) {
+  function edit(it) {
     setForm({
       id: it.id,
       domain: it.domain,
@@ -127,6 +125,22 @@ export default function Glossary() {
       <div className="card">
         <div className="h1">Glossary</div>
 
+        {/* Language picker */}
+        <label className="small muted">Language</label>
+        <select
+          className="select"
+          value={targetLang}
+          onChange={(e) => setTargetLang(e.target.value)}
+        >
+          {languages.map((l) => (
+            <option key={l.value} value={l.value}>
+              {l.label}
+            </option>
+          ))}
+        </select>
+
+        <div className="hr" />
+
         <form onSubmit={upsert} className="col">
           <label className="small muted">Domain</label>
           <select
@@ -145,20 +159,18 @@ export default function Glossary() {
           <input
             className="input"
             value={form.source_text}
-            onChange={(e) =>
-              setForm({ ...form, source_text: e.target.value })
-            }
+            onChange={(e) => setForm({ ...form, source_text: e.target.value })}
             placeholder="e.g., adjournment"
           />
 
-          <label className="small muted">Turkish</label>
+          <label className="small muted">
+            {targetLang === "tr" ? "Turkish" : "French"}
+          </label>
           <input
             className="input"
             value={form.target_text}
-            onChange={(e) =>
-              setForm({ ...form, target_text: e.target.value })
-            }
-            placeholder="e.g., duruşmanın ertelenmesi"
+            onChange={(e) => setForm({ ...form, target_text: e.target.value })}
+            placeholder={targetLang === "tr" ? "e.g., duruşmanın ertelenmesi" : "e.g., ajournement"}
           />
 
           <label className="small muted">Notes (optional)</label>
@@ -173,7 +185,15 @@ export default function Glossary() {
             {form.id ? "Save" : "Add term"}
           </button>
 
-          {status && <div className="small muted">{status}</div>}
+          {form.id ? (
+            <button
+              className="btn"
+              type="button"
+              onClick={() => setForm({ id: null, domain: "court", source_text: "", target_text: "", notes: "" })}
+            >
+              Cancel edit
+            </button>
+          ) : null}
         </form>
       </div>
 
@@ -189,9 +209,7 @@ export default function Glossary() {
         <div className="hr" />
 
         {loading ? <div className="muted">Loading…</div> : null}
-        {!loading && filtered.length === 0 ? (
-          <div className="muted">No terms yet.</div>
-        ) : null}
+        {!loading && filtered.length === 0 ? <div className="muted">No personal terms yet.</div> : null}
 
         <div className="col" style={{ marginTop: 10 }}>
           {filtered.map((it) => (
@@ -199,26 +217,14 @@ export default function Glossary() {
               <div className="row" style={{ justifyContent: "space-between" }}>
                 <span className="badge">{it.domain}</span>
                 <div className="row">
-                  <button className="btn" onClick={() => edit(it)}>
-                    Edit
-                  </button>
-                  <button
-                    className="btn btnDanger"
-                    onClick={() => del(it.id)}
-                  >
-                    Delete
-                  </button>
+                  <button className="btn" onClick={() => edit(it)}>Edit</button>
+                  <button className="btn btnDanger" onClick={() => del(it.id)}>Delete</button>
                 </div>
               </div>
-              <div style={{ marginTop: 8, fontWeight: 700 }}>
-                {it.source_text}
-              </div>
+
+              <div style={{ marginTop: 8, fontWeight: 700 }}>{it.source_text}</div>
               <div style={{ marginTop: 4 }}>{it.target_text}</div>
-              {it.notes && (
-                <div className="small muted" style={{ marginTop: 6 }}>
-                  {it.notes}
-                </div>
-              )}
+              {it.notes ? <div className="small muted" style={{ marginTop: 6 }}>{it.notes}</div> : null}
             </div>
           ))}
         </div>

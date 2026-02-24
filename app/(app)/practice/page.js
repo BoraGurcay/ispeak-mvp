@@ -1,104 +1,60 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 
+const languages = [
+  { value: "tr", label: "Turkish (TR)" },
+  { value: "fr", label: "French (FR)" },
+];
+
+function normalize(s) {
+  return (s || "").toLowerCase().trim();
+}
+
+// Weighted pick: if hard mode, prefer higher wrong_count
+function weightedPick(list, getWrongCount) {
+  if (!list.length) return null;
+  const weighted = list.flatMap((t) => Array((getWrongCount(t) || 0) + 1).fill(t));
+  return weighted[Math.floor(Math.random() * weighted.length)];
+}
+
 export default function Practice() {
-  const [terms, setTerms] = useState([]);
+  const [targetLang, setTargetLang] = useState("tr");
+  const [mode, setMode] = useState("normal"); // normal | hard
+
+  const [terms, setTerms] = useState([]); // combined: shared + personal
   const [current, setCurrent] = useState(null);
+
   const [answer, setAnswer] = useState("");
   const [feedback, setFeedback] = useState("");
   const [loading, setLoading] = useState(true);
 
   const [score, setScore] = useState(0);
   const [streak, setStreak] = useState(0);
-  const [mode, setMode] = useState("normal"); // normal | hard
 
-  // ⭐ direction toggle
-  const [direction, setDirection] = useState("tr-en"); // "en-tr" | "tr-en"
-
-  // ✅ Sounds (useRef so they don’t re-create every render)
+  // Sounds
   const correctSoundRef = useRef(null);
   const wrongSoundRef = useRef(null);
 
-  // ✅ Speech voices
-  const [voices, setVoices] = useState([]);
-
   useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    // UI sounds
-    correctSoundRef.current = new Audio("/sounds/correct.mp3");
-    wrongSoundRef.current = new Audio("/sounds/wrong.mp3");
-    correctSoundRef.current.preload = "auto";
-    wrongSoundRef.current.preload = "auto";
-
-    // speech voices
-    const loadVoices = () => {
-      try {
-        const v = window.speechSynthesis?.getVoices?.() || [];
-        setVoices(v);
-      } catch {
-        setVoices([]);
-      }
-    };
-
-    loadVoices();
-    // Some browsers load voices async
-    if (window.speechSynthesis) {
-      window.speechSynthesis.onvoiceschanged = loadVoices;
+    if (typeof window !== "undefined") {
+      correctSoundRef.current = new Audio("/sounds/correct.mp3");
+      wrongSoundRef.current = new Audio("/sounds/wrong.mp3");
+      correctSoundRef.current.preload = "auto";
+      wrongSoundRef.current.preload = "auto";
     }
-
-    return () => {
-      if (window.speechSynthesis) {
-        window.speechSynthesis.onvoiceschanged = null;
-      }
-    };
   }, []);
 
   useEffect(() => {
+    const saved = localStorage.getItem("ispeak_target_lang");
+    if (saved === "tr" || saved === "fr") setTargetLang(saved);
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("ispeak_target_lang", targetLang);
     loadTerms();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function loadTerms() {
-    setLoading(true);
-
-    const { data: userRes } = await supabase.auth.getUser();
-    const user = userRes?.user;
-    if (!user) {
-      setLoading(false);
-      return;
-    }
-
-    const { data, error } = await supabase
-      .from("user_terms")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (!error && data?.length > 0) {
-      setTerms(data);
-      pickNext(data, mode);
-    } else {
-      setTerms([]);
-      setCurrent(null);
-    }
-
-    setLoading(false);
-  }
-
-  // ⭐ weighted selection
-  function pickNext(list, modeType) {
-    let pool = list;
-
-    if (modeType === "hard") {
-      pool = list.filter((t) => (t.wrong_count || 0) > 0);
-      if (pool.length === 0) pool = list;
-    }
-
-    const weighted = pool.flatMap((t) => Array((t.wrong_count || 0) + 1).fill(t));
-    const next = weighted[Math.floor(Math.random() * weighted.length)];
-    setCurrent(next);
-  }
+  }, [targetLang]);
 
   function playSound(ref) {
     const a = ref?.current;
@@ -109,117 +65,163 @@ export default function Practice() {
     } catch {}
   }
 
-  function pickTurkishVoice(list) {
-    if (!list || list.length === 0) return null;
+  async function loadTerms() {
+    setLoading(true);
+    setFeedback("");
+    setAnswer("");
 
-    // Prefer voices explicitly marked Turkish
-    const tr = list.filter((v) => (v.lang || "").toLowerCase().startsWith("tr"));
-    if (tr.length > 0) {
-      // Often better: Google / Microsoft / Natural / Neural
-      const preferred =
-        tr.find((v) => /google|microsoft|natural|neural/i.test(v.name)) || tr[0];
-      return preferred;
+    const { data: userRes } = await supabase.auth.getUser();
+    const user = userRes?.user;
+    if (!user) {
+      setTerms([]);
+      setCurrent(null);
+      setLoading(false);
+      return;
     }
 
-    // Fallback: sometimes Turkish exists but lang isn't perfect
-    const maybe = list.find((v) => /turk/i.test(v.name));
-    return maybe || null;
-  }
+    // 1) Shared terms (prebuilt)
+    const sharedRes = await supabase
+      .from("terms")
+      .select("id,source_text,target_text,domain,target_lang")
+      .eq("source_lang", "en")
+      .eq("target_lang", targetLang)
+      .eq("domain", "court")
+      .limit(2000);
 
-  // 🔊 Speak Turkish (B + D rely on this)
-  function speakTR(text, opts = {}) {
-    if (typeof window === "undefined") return;
-    if (!text || !text.trim()) return;
-    if (!window.speechSynthesis) return;
+    // 2) Personal terms (user_terms)
+    const personalRes = await supabase
+      .from("user_terms")
+      .select("id,source_text,target_text,domain,wrong_count,source_lang,target_lang")
+      .eq("source_lang", "en")
+      .eq("target_lang", targetLang)
+      .limit(2000);
 
-    try {
-      // Stop any current speech so taps feel responsive
-      window.speechSynthesis.cancel();
+    // 3) Stats for shared terms (user_term_stats)
+    let statsMap = new Map();
+    if (!sharedRes.error && (sharedRes.data || []).length > 0) {
+      const sharedIds = sharedRes.data.map((t) => t.id);
 
-      const u = new SpeechSynthesisUtterance(text);
+      // Pull stats for just these shared ids
+      const statsRes = await supabase
+        .from("user_term_stats")
+        .select("term_id,wrong_count,correct_count")
+        .in("term_id", sharedIds);
 
-      const v = pickTurkishVoice(voices);
-      if (v) {
-        u.voice = v;
-        u.lang = v.lang || "tr-TR";
-      } else {
-        u.lang = "tr-TR";
+      if (!statsRes.error && statsRes.data) {
+        statsMap = new Map(statsRes.data.map((r) => [r.term_id, r]));
       }
+    }
 
-      // defaults (you can tweak later)
-      u.rate = typeof opts.rate === "number" ? opts.rate : 0.95;
-      u.pitch = typeof opts.pitch === "number" ? opts.pitch : 1.0;
+    const shared = (sharedRes.data || []).map((t) => {
+      const st = statsMap.get(t.id);
+      return {
+        ...t,
+        __kind: "shared",
+        wrong_count: st?.wrong_count || 0,
+        correct_count: st?.correct_count || 0,
+      };
+    });
 
-      window.speechSynthesis.speak(u);
-    } catch {}
+    const personal = (personalRes.data || []).map((t) => ({
+      ...t,
+      __kind: "personal",
+      wrong_count: t.wrong_count || 0,
+    }));
+
+    // Combine (shared first, then personal)
+    const combined = [...shared, ...personal];
+
+    setTerms(combined);
+
+    // Pick first
+    const first = pickNext(combined, mode);
+    setCurrent(first);
+
+    setLoading(false);
   }
 
-  const promptText = useMemo(() => {
-    if (!current) return "";
-    return direction === "en-tr" ? (current.source_text || "") : (current.target_text || "");
-  }, [current, direction]);
+  function pickNext(list, modeType) {
+    if (!list.length) return null;
 
-  const expectedAnswer = useMemo(() => {
-    if (!current) return "";
-    return direction === "en-tr" ? (current.target_text || "") : (current.source_text || "");
-  }, [current, direction]);
+    let pool = list;
+    if (modeType === "hard") {
+      const hardPool = list.filter((t) => (t.wrong_count || 0) > 0);
+      pool = hardPool.length ? hardPool : list;
+    }
+    return weightedPick(pool, (t) => t.wrong_count || 0);
+  }
 
-  const answerPlaceholder = useMemo(() => {
-    return direction === "en-tr" ? "Type Turkish..." : "Type English...";
-  }, [direction]);
+  async function incrementSharedStat(termId, field) {
+    // field: "wrong_count" | "correct_count"
+    const { data: userRes } = await supabase.auth.getUser();
+    const user = userRes?.user;
+    if (!user) return;
 
-  // ✅ B) Auto-play pronunciation after answer:
-  // - after correct: play the *Turkish* side
-  // - after wrong: do NOT autoplay (less annoying), but user can tap 🔊
+    // Upsert + increment
+    // 1) Ensure row exists
+    await supabase.from("user_term_stats").upsert(
+      { user_id: user.id, term_id: termId, wrong_count: 0, correct_count: 0, last_seen: new Date().toISOString() },
+      { onConflict: "user_id,term_id" }
+    );
+
+    // 2) Increment
+    const patch = field === "wrong_count"
+      ? { wrong_count: (current.wrong_count || 0) + 1, last_seen: new Date().toISOString() }
+      : { correct_count: (current.correct_count || 0) + 1, last_seen: new Date().toISOString() };
+
+    await supabase
+      .from("user_term_stats")
+      .update(patch)
+      .eq("user_id", user.id)
+      .eq("term_id", termId);
+  }
+
   async function checkAnswer() {
     if (!current) return;
 
-    const correct = (expectedAnswer || "").toLowerCase().trim();
-    const user = (answer || "").toLowerCase().trim();
+    const correct = normalize(current.target_text);
+    const userAns = normalize(answer);
 
-    if (!correct || !user) return;
+    if (!userAns) return;
 
-    if (correct === user) {
+    if (correct === userAns) {
       playSound(correctSoundRef);
       setFeedback("✅ Correct!");
       setScore((s) => s + 10);
       setStreak((s) => s + 1);
 
-      // Auto-play Turkish pronunciation on correct
-      // If you’re practicing TR → EN, the Turkish is the promptText.
-      // If you’re practicing EN → TR, the Turkish is the expectedAnswer.
-      const turkishToSpeak = direction === "tr-en" ? promptText : expectedAnswer;
-      speakTR(turkishToSpeak, { rate: 0.95, pitch: 1.0 });
+      // update stats
+      if (current.__kind === "personal") {
+        // optional: we can also track correct_count in personal later
+      } else {
+        await incrementSharedStat(current.id, "correct_count");
+        // update local state so hard mode gets smarter immediately
+        setCurrent((c) => ({ ...c, correct_count: (c.correct_count || 0) + 1 }));
+      }
     } else {
       playSound(wrongSoundRef);
-      setFeedback(`❌ Correct: ${expectedAnswer}`);
+      setFeedback(`❌ Correct: ${current.target_text}`);
       setStreak(0);
 
-      await supabase
-        .from("user_terms")
-        .update({ wrong_count: (current.wrong_count || 0) + 1 })
-        .eq("id", current.id);
+      if (current.__kind === "personal") {
+        await supabase
+          .from("user_terms")
+          .update({ wrong_count: (current.wrong_count || 0) + 1 })
+          .eq("id", current.id);
+      } else {
+        await incrementSharedStat(current.id, "wrong_count");
+      }
+
+      // update local so hard mode feels immediate
+      setCurrent((c) => ({ ...c, wrong_count: (c.wrong_count || 0) + 1 }));
     }
   }
 
   function nextTerm() {
-    if (!terms || terms.length === 0) return;
-    pickNext(terms, mode);
+    const next = pickNext(terms, mode);
+    setCurrent(next);
     setAnswer("");
     setFeedback("");
-  }
-
-  function pronounceNormal() {
-    if (!current) return;
-    const turkishToSpeak = direction === "tr-en" ? promptText : expectedAnswer;
-    speakTR(turkishToSpeak, { rate: 0.95, pitch: 1.0 });
-  }
-
-  // ✅ D) Slow button (clearer articulation)
-  function pronounceSlow() {
-    if (!current) return;
-    const turkishToSpeak = direction === "tr-en" ? promptText : expectedAnswer;
-    speakTR(turkishToSpeak, { rate: 0.80, pitch: 0.95 });
   }
 
   if (loading) return <div className="container">Loading…</div>;
@@ -227,7 +229,7 @@ export default function Practice() {
   if (!current)
     return (
       <div className="container">
-        <div className="card">No terms yet. Add some first.</div>
+        <div className="card">No terms yet. Seed terms should appear now — if not, tell me and we’ll fix it.</div>
       </div>
     );
 
@@ -236,97 +238,66 @@ export default function Practice() {
       <div className="card">
         <div className="h1">Practice</div>
 
-        {/* ⭐ SCORE PANEL */}
-        <div className="row" style={{ marginTop: 6 }}>
-          <div className="badge">Score: {score}</div>
-          <div className="badge">Streak: {streak}</div>
-          <div className="badge">Mistakes: {current.wrong_count || 0}</div>
-        </div>
+        {/* Language + Mode */}
+        <label className="small muted">Language</label>
+        <select className="select" value={targetLang} onChange={(e) => setTargetLang(e.target.value)}>
+          {languages.map((l) => (
+            <option key={l.value} value={l.value}>{l.label}</option>
+          ))}
+        </select>
 
-        {/* ⭐ MODE TOGGLE */}
         <div className="row" style={{ marginTop: 10 }}>
           <button
             className={"btn " + (mode === "normal" ? "btnPrimary" : "")}
-            onClick={() => {
-              setMode("normal");
-              nextTerm();
-            }}
+            onClick={() => { setMode("normal"); nextTerm(); }}
           >
             Normal
           </button>
           <button
             className={"btn " + (mode === "hard" ? "btnPrimary" : "")}
-            onClick={() => {
-              setMode("hard");
-              nextTerm();
-            }}
+            onClick={() => { setMode("hard"); nextTerm(); }}
           >
             Hard Words
           </button>
         </div>
 
-        {/* ⭐ DIRECTION TOGGLE */}
+        {/* Score panel */}
         <div className="row" style={{ marginTop: 10 }}>
-          <button
-            className={"btn " + (direction === "en-tr" ? "btnPrimary" : "")}
-            onClick={() => {
-              setDirection("en-tr");
-              setAnswer("");
-              setFeedback("");
-            }}
-          >
-            EN → TR
-          </button>
-          <button
-            className={"btn " + (direction === "tr-en" ? "btnPrimary" : "")}
-            onClick={() => {
-              setDirection("tr-en");
-              setAnswer("");
-              setFeedback("");
-            }}
-          >
-            TR → EN
-          </button>
+          <div className="badge">Score: {score}</div>
+          <div className="badge">Streak: {streak}</div>
+          <div className="badge">Mistakes: {current.wrong_count || 0}</div>
+          <div className="badge">{current.__kind === "shared" ? "Pack" : "My term"}</div>
         </div>
 
-        {/* PROMPT + PRONUNCIATION */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14 }}>
-          <div style={{ fontSize: 22, fontWeight: 700, flex: 1 }}>
-            {promptText}
-          </div>
-
-          {/* 🔊 Normal */}
-          <button className="btn" type="button" onClick={pronounceNormal} title="Pronounce">
-            🔊
-          </button>
-
-          {/* 🐢 Slow */}
-          <button className="btn" type="button" onClick={pronounceSlow} title="Slow pronunciation">
-            🐢
-          </button>
+        <div style={{ fontSize: 22, fontWeight: 700, marginTop: 14 }}>
+          {current.source_text}
         </div>
 
         <input
           className="input"
-          placeholder={answerPlaceholder}
+          placeholder="Type translation…"
           value={answer}
           onChange={(e) => setAnswer(e.target.value)}
         />
 
-        <div className="row" style={{ marginTop: 10 }}>
-          <button className="btn btnPrimary" type="button" onClick={checkAnswer}>
-            Check
-          </button>
-          <button className="btn" type="button" onClick={nextTerm}>
-            Next
-          </button>
-        </div>
+        <button className="btn btnPrimary" onClick={checkAnswer}>
+          Check
+        </button>
 
         {feedback ? (
           <div className="small muted" style={{ marginTop: 10 }}>
             {feedback}
           </div>
         ) : null}
+
+        <button className="btn" style={{ marginTop: 10 }} onClick={nextTerm}>
+          Next
+        </button>
+
+        <div className="hr" />
+        <div className="small muted">
+          Tip: “Hard Words” focuses on terms you personally miss more often (even from the built-in pack).
+        </div>
       </div>
     </div>
   );
