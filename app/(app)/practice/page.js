@@ -129,8 +129,8 @@ export default function PracticePage() {
       // 1) Try shared terms
       const sharedRes = await supabase
         .from("terms")
-        .select("id, source, target, domain, lang")
-        .eq("lang", lang);
+        .select("id, source_text, target_test, domain, source_lang target_lang")
+        .eq("target_lang", lang); // lang should be "tr" or "fr"
 
       // 2) Try personal terms if logged in (optional)
       // If you don't have user_terms table, this will fail gracefully.
