@@ -1,145 +1,206 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { supabaseBrowser } from "@/lib/supabaseBrowser";
+import { supabase } from "../../../lib/supabaseClient";
 
-function normalize(s) {
-  // Lowercase + trim + collapse spaces
-  let x = (s || "").toString().toLowerCase().trim().replace(/\s+/g, " ");
-
-  // Remove anything inside parentheses (and the parentheses)
-  x = x.replace(/[^)]*/g, " ").replace(/\s+/g, " ").trim();
-
-  // Remove punctuation we don't care about
-  x = x.replace(/[“”"'.:;!?،]/g, "").replace(/[-–—]/g, " ");
-
-  // Turkish + French-friendly character folding (so users can type without accents)
-  x = x
-    .replace(/ı/g, "i")
-    .replace(/İ/g, "i")
-    .replace(/ş/g, "s")
-    .replace(/ğ/g, "g")
-    .replace(/ü/g, "u")
-    .replace(/ö/g, "o")
-    .replace(/ç/g, "c")
-    .replace(/â|à|á|ä|ã|å/g, "a")
-    .replace(/ê|è|é|ë/g, "e")
-    .replace(/î|ì|í|ï/g, "i")
-    .replace(/ô|ò|ó|ö/g, "o")
-    .replace(/û|ù|ú|ü/g, "u")
-    .replace(/ñ/g, "n")
-    .replace(/œ/g, "oe")
-    .replace(/æ/g, "ae");
-
-  // Final cleanup
-  x = x.replace(/\s+/g, " ").trim();
-  return x;
+/** ---------- Normalization / alternatives helpers ---------- */
+function stripBracketed(s) {
+  // remove ( ... ), [ ... ], { ... }
+  return (s || "")
+    .replace(/\(([^)]*)\)/g, " ")
+    .replace(/\[([^\]]*)\]/g, " ")
+    .replace(/\{([^}]*)\}/g, " ");
 }
 
-function stripParens(s) {
-  return (s || "").toString().replace(/[^)]*/g, " ").replace(/\s+/g, " ").trim();
+function stripDiacritics(s) {
+  // Handles most accents via NFD + combining marks
+  // Also handles Turkish dotless ı explicitly
+  return (s || "")
+    .toString()
+    .replace(/ı/g, "i")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function normalize(s) {
+  return stripDiacritics(stripBracketed(s))
+    .toLowerCase()
+    .replace(/[“”]/g, '"')
+    .replace(/[’‘]/g, "'")
+    .replace(/[—–]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function extractAlternatives(rawTarget) {
-  // 1) remove bracketed explanations
-  const cleaned = stripParens(rawTarget);
+  // split on / ; , and also treat bracketed parts as ignorable
+  const t = (rawTarget || "").toString();
+  const parts = t
+    .split(/[\/;,]/g)
+    .map((p) => p.trim())
+    .filter(Boolean);
 
-  // 2) split on common separators used in glossaries
-  const parts = cleaned.split(/\s*(?:\/|;|,)\s*/g);
+  // also include full target as an option
+  const all = [t.trim(), ...parts].filter(Boolean);
 
-  // 3) trim + de-dupe (keep original accents in display)
+  // normalize & dedupe
   const seen = new Set();
   const out = [];
-  for (const p of parts) {
-    const t = (p || "").trim();
-    if (!t) continue;
-    const key = normalize(t);
-    if (!key) continue;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(t);
+  for (const a of all) {
+    const n = normalize(a);
+    if (!n) continue;
+    if (seen.has(n)) continue;
+    seen.add(n);
+    out.push(a);
   }
-  return out.length ? out : (cleaned ? [cleaned] : []);
+  return out;
 }
 
-function getAccepted(rawTarget) {
-  return extractAlternatives(rawTarget);
-}
+function findMatchedAlternative(guess, rawTarget) {
+  const g = normalize(guess);
+  if (!g) return null;
 
-function findMatchedAlternative(userAnswer, rawTarget) {
-  const userN = normalize(userAnswer);
-  const alts = getAccepted(rawTarget);
+  // Accept exact normalized match against any alternative.
+  const alts = extractAlternatives(rawTarget);
   for (const a of alts) {
-    if (normalize(a) === userN) return a;
+    if (normalize(a) === g) return a;
   }
+
+  // Also accept match if user includes punctuation/spaces differences
+  const g2 = g.replace(/[^a-z0-9]+/g, "");
+  for (const a of alts) {
+    const a2 = normalize(a).replace(/[^a-z0-9]+/g, "");
+    if (a2 && a2 === g2) return a;
+  }
+
   return null;
 }
 
-export default function PracticePage() {
-  const supabase = useMemo(() => supabaseBrowser(), []);
+function pickRandomTerm(arr) {
+  if (!arr || arr.length === 0) return null;
+  const i = Math.floor(Math.random() * arr.length);
+  return arr[i];
+}
 
+export default function PracticePage() {
   const [lang, setLang] = useState("tr");
-  const [mode, setMode] = useState("normal"); // normal | hard
+  const [mode, setMode] = useState("normal"); // "normal" | "hard"
   const [pool, setPool] = useState([]);
   const [current, setCurrent] = useState(null);
-
   const [answer, setAnswer] = useState("");
-  const [feedback, setFeedback] = useState("");
   const [accepted, setAccepted] = useState([]);
   const [matchedAlt, setMatchedAlt] = useState(null);
-
+  const [dataSource, setDataSource] = useState("(none)");
+  const [loading, setLoading] = useState(true);
   const [score, setScore] = useState(0);
   const [streak, setStreak] = useState(0);
-  const [mistakes, setMistakes] = useState(0);
 
-  const rightRef = useRef(null);
-  const wrongRef = useRef(null);
+  const inputRef = useRef(null);
+
+  const languages = [
+    { value: "tr", label: "Turkish (TR)" },
+    { value: "fr", label: "French (FR)" },
+  ];
+
+  const filteredPool = useMemo(() => {
+    if (mode === "hard") {
+      // simple hard filter: longer target OR multiple alternatives
+      return pool.filter((t) => {
+        const tgt = (t.target_text || "").toString();
+        return tgt.length >= 18 || extractAlternatives(tgt).length >= 2;
+      });
+    }
+    return pool;
+  }, [pool, mode]);
 
   useEffect(() => {
-    rightRef.current = new Audio("/sounds/right.mp3");
-    wrongRef.current = new Audio("/sounds/wrong.mp3");
-  }, []);
-
-  function playRight() {
-    try {
-      rightRef.current && rightRef.current.play();
-    } catch {}
-  }
-  function playWrong() {
-    try {
-      wrongRef.current && wrongRef.current.play();
-    } catch {}
-  }
+    setCurrent(pickRandomTerm(filteredPool));
+  }, [mode, filteredPool]);
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadPool() {
+      setLoading(true);
+      setDataSource("(loading)");
       setPool([]);
       setCurrent(null);
-      setAnswer("");
-      setFeedback("");
-      setAccepted([]);
-      setMatchedAlt(null);
 
-      // Pull terms from your DB (shared + your own terms should already be handled by your view/RLS setup)
-      // This keeps your existing behavior: practice uses the same term pool you already had.
-      const { data, error } = await supabase
-        .from("terms_practice_view")
-        .select("*")
-        .eq("lang", lang)
-        .limit(5000);
+      // 1) Try shared terms
+      const sharedRes = await supabase
+        .from("terms")
+        .select("id, source, target, domain, lang")
+        .eq("lang", lang);
+
+      // 2) Try personal terms if logged in (optional)
+      // If you don't have user_terms table, this will fail gracefully.
+      let uid = null;
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        uid = authData?.user?.id || null;
+      } catch (_) {}
+
+      let personalRes = { data: [], error: null };
+      if (uid) {
+        personalRes = await supabase
+          .from("user_terms")
+          .select("id, source, target, domain, lang")
+          .eq("user_id", uid)
+          .eq("lang", lang);
+      }
+
+      // If either query errors, log details
+      if (sharedRes.error || personalRes.error) {
+        const err = sharedRes.error || personalRes.error;
+        console.error("practice load error (raw):", err);
+        // This helps because Next overlay often shows {} otherwise:
+        try {
+          console.error(
+            "practice load error (json):",
+            JSON.stringify(err, Object.getOwnPropertyNames(err), 2)
+          );
+        } catch (_) {}
+
+        if (!cancelled) {
+          setDataSource("(error)");
+          setPool([]);
+          setCurrent(null);
+          setLoading(false);
+        }
+        return;
+      }
+
+      // Map DB columns source/target into the keys the practice UI expects
+      const shared = (sharedRes.data || []).map((t) => ({
+        client_id: `s_${t.id}`,
+        term_id: t.id,
+        kind: "shared",
+        source_text: t.source,
+        target_text: t.target,
+        domain: t.domain,
+        lang: t.lang,
+      }));
+
+      const personal = (personalRes.data || []).map((t) => ({
+        client_id: `p_${t.id}`,
+        term_id: t.id,
+        kind: "personal",
+        source_text: t.source,
+        target_text: t.target,
+        domain: t.domain,
+        lang: t.lang,
+      }));
+
+      const merged = [...shared, ...personal];
 
       if (!cancelled) {
-        if (error) {
-          console.error(error);
-          setPool([]);
-          return;
-        }
-        setPool(data || []);
-        // pick first term
-        const first = (data || [])[Math.floor(Math.random() * (data || []).length)] || null;
-        setCurrent(first);
+        setDataSource(uid ? "shared + my terms" : "shared only (not logged in)");
+        setPool(merged);
+        setCurrent(pickRandomTerm(merged));
+        setLoading(false);
+
+        // focus input
+        setTimeout(() => inputRef.current?.focus?.(), 50);
       }
     }
 
@@ -147,29 +208,15 @@ export default function PracticePage() {
     return () => {
       cancelled = true;
     };
-  }, [supabase, lang]);
-
-  function pickRandomTerm(list) {
-    if (!list || !list.length) return null;
-    return list[Math.floor(Math.random() * list.length)];
-  }
-
-  function nextTerm() {
-    setAnswer("");
-    setFeedback("");
-    setAccepted([]);
-    setMatchedAlt(null);
-
-    const next = pickRandomTerm(pool);
-    setCurrent(next);
-  }
+  }, [lang]);
 
   async function checkAnswer() {
+    if (!current) return;
+
     const guess = answer;
     const target = current?.target_text || "";
 
-    // Accepted alternatives (for display + matching)
-    const alts = getAccepted(target);
+    const alts = extractAlternatives(target);
     const matched = findMatchedAlternative(guess, target);
 
     setAccepted(alts);
@@ -177,116 +224,141 @@ export default function PracticePage() {
 
     const isCorrect = matched !== null;
 
-    // Update "hard words" tracking (only for the terms in practice)
-    if (current?.id) {
-      await fetch("/api/hardwords", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ term_id: current.id, correct: isCorrect }),
-      }).catch(() => {});
+    if (isCorrect) {
+      setScore((s) => s + 1);
+      setStreak((s) => s + 1);
+    } else {
+      setStreak(0);
     }
 
-    if (isCorrect) {
-      setFeedback("✅ Correct!");
-      setStreak((s) => s + 1);
-      setScore((s) => s + 10);
-      playRight();
-    } else {
-      setFeedback("❌ Not quite.");
-      setStreak(0);
-      setMistakes((m) => m + 1);
-      playWrong();
-    }
+    // Move to next
+    setAnswer("");
+    const next = pickRandomTerm(filteredPool);
+    setCurrent(next);
+    setTimeout(() => inputRef.current?.focus?.(), 50);
   }
 
   return (
-    <div className="container" style={{ maxWidth: 740 }}>
-      <h1>Practice</h1>
+    <div style={{ maxWidth: 720, margin: "0 auto", padding: 24 }}>
+      <h1 style={{ fontSize: 40, fontWeight: 700, marginBottom: 16 }}>
+        Practice
+      </h1>
 
-      <div className="card" style={{ marginTop: 12 }}>
-        <div className="row" style={{ gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-          <div>
-            <div className="small muted">Language</div>
-            <select className="input" value={lang} onChange={(e) => setLang(e.target.value)}>
-              <option value="tr">Turkish (TR)</option>
-              <option value="fr">French (FR)</option>
-            </select>
-          </div>
-
-          <div style={{ marginLeft: "auto" }}>
-            <div className="row" style={{ gap: 10, alignItems: "center" }}>
-              <div className="small muted">Score: {score}</div>
-              <div className="small muted">Streak: {streak}</div>
-              <div className="small muted">Mistakes: {mistakes}</div>
-            </div>
-          </div>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 16 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ opacity: 0.6 }}>Language</div>
+          <select
+            value={lang}
+            onChange={(e) => setLang(e.target.value)}
+            style={{ padding: 10, borderRadius: 10 }}
+          >
+            {languages.map((l) => (
+              <option key={l.value} value={l.value}>
+                {l.label}
+              </option>
+            ))}
+          </select>
         </div>
 
-        <div className="row" style={{ gap: 10, marginTop: 12 }}>
+        <div style={{ display: "flex", gap: 10 }}>
           <button
-            className={`btn ${mode === "normal" ? "btnPrimary" : ""}`}
             onClick={() => setMode("normal")}
-            type="button"
+            style={{
+              padding: "10px 14px",
+              borderRadius: 999,
+              border: "1px solid #ddd",
+              background: mode === "normal" ? "#111" : "#fff",
+              color: mode === "normal" ? "#fff" : "#111",
+              fontWeight: 600,
+            }}
           >
             Normal
           </button>
           <button
-            className={`btn ${mode === "hard" ? "btnPrimary" : ""}`}
             onClick={() => setMode("hard")}
-            type="button"
+            style={{
+              padding: "10px 14px",
+              borderRadius: 999,
+              border: "1px solid #ddd",
+              background: mode === "hard" ? "#111" : "#fff",
+              color: mode === "hard" ? "#fff" : "#111",
+              fontWeight: 600,
+            }}
           >
             Hard Words
           </button>
         </div>
+
+        <div style={{ marginLeft: "auto", textAlign: "right", opacity: 0.75 }}>
+          <div>
+            Score: {score} &nbsp;&nbsp; Streak: {streak}
+          </div>
+          <div style={{ fontSize: 12 }}>
+            Data source: <b>{dataSource}</b> · Pool size: {filteredPool.length}
+          </div>
+        </div>
       </div>
 
-      <div className="card" style={{ marginTop: 16 }}>
-        {!current ? (
-          <div className="muted">Loading…</div>
+      <div style={{ marginTop: 28 }}>
+        {loading ? (
+          <div style={{ fontSize: 22, opacity: 0.6 }}>Loading...</div>
+        ) : !current ? (
+          <div style={{ opacity: 0.7 }}>
+            No terms found for this language.
+          </div>
         ) : (
           <>
-            <h2 style={{ marginBottom: 6 }}>{current.source_text}</h2>
-            <div className="muted" style={{ marginBottom: 12 }}>
-              {current.hint_text || ""}
+            <div style={{ fontSize: 18, opacity: 0.65 }}>Translate:</div>
+            <div style={{ fontSize: 34, fontWeight: 700, marginTop: 8 }}>
+              {current.source_text}
             </div>
 
-            <input
-              className="input"
-              value={answer}
-              onChange={(e) => setAnswer(e.target.value)}
-              placeholder="Type your answer…"
-            />
-
-            <div className="row" style={{ gap: 10, marginTop: 12 }}>
-              <button className="btn btnPrimary" onClick={checkAnswer} type="button">
+            <div style={{ marginTop: 20, display: "flex", gap: 10 }}>
+              <input
+                ref={inputRef}
+                value={answer}
+                onChange={(e) => setAnswer(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") checkAnswer();
+                }}
+                placeholder="Type your answer…"
+                style={{
+                  flex: 1,
+                  padding: 14,
+                  borderRadius: 12,
+                  border: "1px solid #ddd",
+                  fontSize: 16,
+                }}
+              />
+              <button
+                onClick={checkAnswer}
+                style={{
+                  padding: "14px 18px",
+                  borderRadius: 12,
+                  border: "1px solid #111",
+                  background: "#111",
+                  color: "#fff",
+                  fontWeight: 700,
+                }}
+              >
                 Check
               </button>
-              <button className="btn" onClick={nextTerm} type="button">
-                Next
-              </button>
             </div>
 
-            {feedback ? (
-              <div style={{ marginTop: 10 }}>
-                <div className="small muted">{feedback}</div>
-
-                {accepted && accepted.length ? (
-                  <div className="small muted" style={{ marginTop: 6 }}>
-                    Accepted:{" "}
-                    {accepted.map((a, i) => (
-                      <span key={i} style={{ marginRight: 6, fontWeight: matchedAlt === a ? 700 : 400 }}>
-                        {a}
-                        {i < accepted.length - 1 ? " · " : ""}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
+            {accepted.length > 0 && (
+              <div style={{ marginTop: 14, opacity: 0.9 }}>
+                <div style={{ fontWeight: 700 }}>
+                  Accepted answers:
+                </div>
+                <div style={{ marginTop: 6 }}>
+                  {accepted.join(" · ")}
+                </div>
+                <div style={{ marginTop: 6 }}>
+                  Matched:{" "}
+                  <b>{matchedAlt ? matchedAlt : "—"}</b>
+                </div>
               </div>
-            ) : null}
-
-            <div className="small muted" style={{ marginTop: 18 }}>
-              Tip: “Hard Words” focuses on terms you personally miss more often (even from the built-in shared pack).
-            </div>
+            )}
           </>
         )}
       </div>

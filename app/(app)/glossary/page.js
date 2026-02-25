@@ -14,6 +14,11 @@ const languages = [
   { value: "fr", label: "French (FR)" },
 ];
 
+function domainLabel(value) {
+  const d = domains.find((x) => x.value === value);
+  return d?.label ?? "Unassigned";
+}
+
 export default function Glossary() {
   const [q, setQ] = useState("");
   const [items, setItems] = useState([]);
@@ -93,7 +98,7 @@ export default function Glossary() {
 
     if (sharedRes.error) {
       console.error("Shared terms error:", sharedRes.error);
-      showStatus(`Pack load error: ${sharedRes.error.message}`);
+      showStatus(`Shared load error: ${sharedRes.error.message}`);
     }
 
     // Personal terms
@@ -186,38 +191,37 @@ export default function Glossary() {
     await load();
   }
 
-  // Copy a pack term into user_terms so it becomes "My term"
-  async function addPackToMyTerms(packTerm) {
-    // prevent double click
-    if (savingIds.has(packTerm.id)) return;
+  // Copy a shared term into user_terms so it becomes "My term"
+  async function addSharedToMyTerms(sharedTerm) {
+    if (savingIds.has(sharedTerm.id)) return;
 
     const { data: userRes } = await supabase.auth.getUser();
     const user = userRes?.user;
     if (!user) return alert("Please sign in to save personal terms.");
 
     const alreadyPersonal = items.some(
-      (it) => it.__kind === "personal" && termKey(it) === termKey(packTerm)
+      (it) => it.__kind === "personal" && termKey(it) === termKey(sharedTerm)
     );
     if (alreadyPersonal) return showStatus("Already in My terms");
 
     const next = new Set(savingIds);
-    next.add(packTerm.id);
+    next.add(sharedTerm.id);
     setSavingIds(next);
 
     const payload = {
       user_id: user.id,
       source_lang: "en",
       target_lang: targetLang,
-      domain: packTerm.domain || form.domain || "court",
-      source_text: (packTerm.source_text || "").trim(),
-      target_text: (packTerm.target_text || "").trim(),
+      domain: sharedTerm.domain || "court", // safe default
+      source_text: (sharedTerm.source_text || "").trim(),
+      target_text: (sharedTerm.target_text || "").trim(),
       notes: null,
     };
 
     const res = await supabase.from("user_terms").insert(payload);
 
     const next2 = new Set(next);
-    next2.delete(packTerm.id);
+    next2.delete(sharedTerm.id);
     setSavingIds(next2);
 
     if (res.error) return alert(res.error.message);
@@ -326,45 +330,46 @@ export default function Glossary() {
         {!loading && filtered.length === 0 ? <div className="muted">No terms found.</div> : null}
 
         <div className="col" style={{ marginTop: 10 }}>
-          {filtered.map((it) => (
-            <div key={`${it.__kind}-${it.id}`} className="card" style={{ padding: 12 }}>
-              <div className="row" style={{ justifyContent: "space-between" }}>
-                <span className="badge">
-                  {it.__kind === "shared" ? "Pack" : "My term"} • {it.domain || "—"}
-                </span>
+          {filtered.map((it) => {
+            const kindLabel = it.__kind === "shared" ? "Shared" : "My terms";
+            const dLabel = domainLabel(it.domain);
 
-                {it.__kind === "personal" ? (
-                  <div className="row">
-                    <button className="btn" onClick={() => edit(it)}>
-                      Edit
+            return (
+              <div key={`${it.__kind}-${it.id}`} className="card" style={{ padding: 12 }}>
+                <div className="row" style={{ justifyContent: "space-between" }}>
+                  <span className="badge">
+                    {kindLabel} • {dLabel}
+                  </span>
+
+                  {it.__kind === "personal" ? (
+                    <div className="row">
+                      <button className="btn" onClick={() => edit(it)}>
+                        Edit
+                      </button>
+                      <button className="btn btnDanger" onClick={() => del(it.id)}>
+                        Delete
+                      </button>
+                    </div>
+                  ) : (
+                    <button className="btn" disabled={savingIds.has(it.id)} onClick={() => addSharedToMyTerms(it)}>
+                      {savingIds.has(it.id) ? "Saving…" : "Add to My Terms"}
                     </button>
-                    <button className="btn btnDanger" onClick={() => del(it.id)}>
-                      Delete
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    className="btn"
-                    disabled={savingIds.has(it.id)}
-                    onClick={() => addPackToMyTerms(it)}
-                  >
-                    {savingIds.has(it.id) ? "Saving…" : "Add to My Terms"}
-                  </button>
-                )}
-              </div>
-
-              <div style={{ marginTop: 8, fontWeight: 700 }}>{it.source_text}</div>
-              <div style={{ marginTop: 4 }}>{it.target_text}</div>
-
-              {it.notes ? (
-                <div className="small muted" style={{ marginTop: 6 }}>
-                  {it.notes}
+                  )}
                 </div>
-              ) : null}
-            </div>
-          ))}
+
+                <div style={{ marginTop: 8, fontWeight: 700 }}>{it.source_text}</div>
+                <div style={{ marginTop: 4 }}>{it.target_text}</div>
+
+                {it.notes ? (
+                  <div className="small muted" style={{ marginTop: 6 }}>
+                    {it.notes}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
   );
-}
+} 
