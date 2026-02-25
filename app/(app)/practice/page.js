@@ -1,4 +1,5 @@
 "use client";
+
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 
@@ -7,8 +8,71 @@ const languages = [
   { value: "fr", label: "French (FR)" },
 ];
 
+// --- Normalization helpers (so answers are forgiving) ---
+function stripBracketed(s) {
+  // remove ( ... ), [ ... ], { ... }
+  return (s || "")
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\[[^\]]*\]/g, " ")
+    .replace(/\{[^}]*\}/g, " ");
+}
+
+function stripDiacritics(s) {
+  // Handles most accents via NFD + combining marks
+  // Also handles Turkish dotless i explicitly
+  return (s || "")
+    .replace(/ı/g, "i")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
 function normalize(s) {
-  return (s || "").toLowerCase().trim();
+  return stripDiacritics(stripBracketed(s))
+    .toLowerCase()
+    .replace(/[’'"]/g, "") // ignore apostrophes/quotes
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function splitAlternatives(targetText) {
+  // Split on "/" plus some common separators that people use for alternatives
+  // Keep it conservative so we don’t accidentally split legit phrases too aggressively.
+  const cleaned = stripBracketed(targetText || "");
+
+  // Primary: slash alternatives (A/B)
+  const parts = cleaned.split("/");
+
+  // Also handle things like "A; B" or "A, B" (optional)
+  const more = [];
+  for (const p of parts) {
+    const sub = p.split(/[;,]/g);
+    for (const x of sub) more.push(x);
+  }
+
+  // Normalize each and keep only meaningful entries
+  const variants = more
+    .map((x) => normalize(x))
+    .filter((x) => x && x.length >= 2);
+
+  // Also include full normalized (sometimes user types the full thing)
+  const full = normalize(targetText);
+  if (full && !variants.includes(full)) variants.push(full);
+
+  // Deduplicate
+  return Array.from(new Set(variants));
+}
+
+function isCorrectAnswer(userAnswer, targetText) {
+  const ua = normalize(userAnswer);
+  if (!ua) return false;
+
+  const variants = splitAlternatives(targetText);
+
+  // Exact match against any acceptable variant
+  if (variants.includes(ua)) return true;
+
+  // Small extra forgiveness: if the user types extra spaces, already handled in normalize.
+  return false;
 }
 
 // Weighted pick: if hard mode, prefer higher wrong_count
@@ -101,7 +165,6 @@ export default function Practice() {
     if (!sharedRes.error && (sharedRes.data || []).length > 0) {
       const sharedIds = sharedRes.data.map((t) => t.id);
 
-      // Pull stats for just these shared ids
       const statsRes = await supabase
         .from("user_term_stats")
         .select("term_id,wrong_count,correct_count")
@@ -128,12 +191,9 @@ export default function Practice() {
       wrong_count: t.wrong_count || 0,
     }));
 
-    // Combine (shared first, then personal)
     const combined = [...shared, ...personal];
-
     setTerms(combined);
 
-    // Pick first
     const first = pickNext(combined, mode);
     setCurrent(first);
 
@@ -152,50 +212,45 @@ export default function Practice() {
   }
 
   async function incrementSharedStat(termId, field) {
-    // field: "wrong_count" | "correct_count"
     const { data: userRes } = await supabase.auth.getUser();
     const user = userRes?.user;
     if (!user) return;
 
-    // Upsert + increment
-    // 1) Ensure row exists
     await supabase.from("user_term_stats").upsert(
-      { user_id: user.id, term_id: termId, wrong_count: 0, correct_count: 0, last_seen: new Date().toISOString() },
+      {
+        user_id: user.id,
+        term_id: termId,
+        wrong_count: 0,
+        correct_count: 0,
+        last_seen: new Date().toISOString(),
+      },
       { onConflict: "user_id,term_id" }
     );
 
-    // 2) Increment
-    const patch = field === "wrong_count"
-      ? { wrong_count: (current.wrong_count || 0) + 1, last_seen: new Date().toISOString() }
-      : { correct_count: (current.correct_count || 0) + 1, last_seen: new Date().toISOString() };
+    const patch =
+      field === "wrong_count"
+        ? { wrong_count: (current.wrong_count || 0) + 1, last_seen: new Date().toISOString() }
+        : { correct_count: (current.correct_count || 0) + 1, last_seen: new Date().toISOString() };
 
-    await supabase
-      .from("user_term_stats")
-      .update(patch)
-      .eq("user_id", user.id)
-      .eq("term_id", termId);
+    await supabase.from("user_term_stats").update(patch).eq("user_id", user.id).eq("term_id", termId);
   }
 
   async function checkAnswer() {
     if (!current) return;
 
-    const correct = normalize(current.target_text);
-    const userAns = normalize(answer);
-
+    const userAns = (answer || "").trim();
     if (!userAns) return;
 
-    if (correct === userAns) {
+    const ok = isCorrectAnswer(userAns, current.target_text);
+
+    if (ok) {
       playSound(correctSoundRef);
       setFeedback("✅ Correct!");
       setScore((s) => s + 10);
       setStreak((s) => s + 1);
 
-      // update stats
-      if (current.__kind === "personal") {
-        // optional: we can also track correct_count in personal later
-      } else {
+      if (current.__kind === "shared") {
         await incrementSharedStat(current.id, "correct_count");
-        // update local state so hard mode gets smarter immediately
         setCurrent((c) => ({ ...c, correct_count: (c.correct_count || 0) + 1 }));
       }
     } else {
@@ -212,7 +267,6 @@ export default function Practice() {
         await incrementSharedStat(current.id, "wrong_count");
       }
 
-      // update local so hard mode feels immediate
       setCurrent((c) => ({ ...c, wrong_count: (c.wrong_count || 0) + 1 }));
     }
   }
@@ -238,40 +292,32 @@ export default function Practice() {
       <div className="card">
         <div className="h1">Practice</div>
 
-        {/* Language + Mode */}
         <label className="small muted">Language</label>
         <select className="select" value={targetLang} onChange={(e) => setTargetLang(e.target.value)}>
           {languages.map((l) => (
-            <option key={l.value} value={l.value}>{l.label}</option>
+            <option key={l.value} value={l.value}>
+              {l.label}
+            </option>
           ))}
         </select>
 
         <div className="row" style={{ marginTop: 10 }}>
-          <button
-            className={"btn " + (mode === "normal" ? "btnPrimary" : "")}
-            onClick={() => { setMode("normal"); nextTerm(); }}
-          >
+          <button className={"btn " + (mode === "normal" ? "btnPrimary" : "")} onClick={() => { setMode("normal"); nextTerm(); }}>
             Normal
           </button>
-          <button
-            className={"btn " + (mode === "hard" ? "btnPrimary" : "")}
-            onClick={() => { setMode("hard"); nextTerm(); }}
-          >
+          <button className={"btn " + (mode === "hard" ? "btnPrimary" : "")} onClick={() => { setMode("hard"); nextTerm(); }}>
             Hard Words
           </button>
         </div>
 
-        {/* Score panel */}
         <div className="row" style={{ marginTop: 10 }}>
           <div className="badge">Score: {score}</div>
           <div className="badge">Streak: {streak}</div>
           <div className="badge">Mistakes: {current.wrong_count || 0}</div>
-          <div className="badge">{current.__kind === "shared" ? "Pack" : "My term"}</div>
+          <div className="badge">{current.__kind === "shared" ? "Shared" : "My term"}</div>
         </div>
 
-        <div style={{ fontSize: 22, fontWeight: 700, marginTop: 14 }}>
-          {current.source_text}
-        </div>
+        <div style={{ fontSize: 22, fontWeight: 700, marginTop: 14 }}>{current.source_text}</div>
 
         <input
           className="input"
@@ -296,7 +342,7 @@ export default function Practice() {
 
         <div className="hr" />
         <div className="small muted">
-          Tip: “Hard Words” focuses on terms you personally miss more often (even from the built-in pack).
+          Tip: “Hard Words” focuses on terms you personally miss more often (even from the built-in shared pack).
         </div>
       </div>
     </div>
