@@ -70,10 +70,18 @@ export default function PracticePage() {
     return pool;
   }, [pool, mode]);
 
-  // Update current when mode/pool changes
+  // Ensure current is valid for the current filter
   useEffect(() => {
-    setCurrent(pickRandom(filteredPool));
-  }, [filteredPool, mode]);
+    if (!filteredPool.length) {
+      setCurrent(null);
+      return;
+    }
+    // If current isn't in filtered set, pick a new one
+    if (!current || !filteredPool.some((t) => t.id === current.id)) {
+      setCurrent(pickRandom(filteredPool));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredPool]);
 
   // Load pool when language changes
   useEffect(() => {
@@ -124,11 +132,10 @@ export default function PracticePage() {
 
       if (sharedRes?.error) {
         console.error("practice shared terms error:", sharedRes.error.message);
-      }
 
-      if (sharedRes?.error) {
         // If shared fails, we still show personal (if any), otherwise show error
         const mergedOnlyPersonal = personal;
+
         if (!cancelled) {
           setPool(mergedOnlyPersonal);
           setCurrent(pickRandom(mergedOnlyPersonal));
@@ -197,7 +204,7 @@ export default function PracticePage() {
     }
   }
 
-  function skip() {
+  function nextCard() {
     const next = pickRandom(filteredPool);
     setCurrent(next);
     setAnswer("");
@@ -322,7 +329,7 @@ export default function PracticePage() {
                 Check
               </button>
               <button
-                onClick={skip}
+                onClick={nextCard}
                 style={{
                   padding: "12px 14px",
                   borderRadius: 12,
@@ -332,7 +339,7 @@ export default function PracticePage() {
                   cursor: "pointer",
                 }}
               >
-                Skip
+                Next
               </button>
             </div>
 
