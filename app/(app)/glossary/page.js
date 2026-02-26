@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 
 const domains = [
@@ -19,19 +19,24 @@ function domainLabel(value) {
   return d?.label ?? "Unassigned";
 }
 
+function normalizeKey(s) {
+  return (s || "").toString().trim().toLowerCase();
+}
+
 export default function Glossary() {
   const [q, setQ] = useState("");
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // match Practice page key
+  // Match Practice page key
   const [targetLang, setTargetLang] = useState("tr");
 
   // list filter (separate from form domain)
   const [domainFilter, setDomainFilter] = useState("all"); // all | court | immigration | family
 
-  // lightweight status message (no debug)
+  // status message
   const [status, setStatus] = useState("");
+  const statusTimerRef = useRef(null);
 
   const [form, setForm] = useState({
     id: null,
@@ -46,8 +51,8 @@ export default function Glossary() {
 
   function showStatus(msg) {
     setStatus(msg);
-    window.clearTimeout(showStatus._t);
-    showStatus._t = window.setTimeout(() => setStatus(""), 1800);
+    if (statusTimerRef.current) window.clearTimeout(statusTimerRef.current);
+    statusTimerRef.current = window.setTimeout(() => setStatus(""), 1800);
   }
 
   // Load saved language
@@ -62,8 +67,9 @@ export default function Glossary() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetLang]);
 
+  // Use the row’s own target_lang for the key (more robust)
   function termKey(it) {
-    return `${(it.domain || "")}|${(it.source_text || "").trim().toLowerCase()}|${targetLang}`;
+    return `${normalizeKey(it.domain)}|${normalizeKey(it.source_text)}|${normalizeKey(it.target_lang || targetLang)}`;
   }
 
   const filtered = useMemo(() => {
@@ -212,7 +218,7 @@ export default function Glossary() {
       user_id: user.id,
       source_lang: "en",
       target_lang: targetLang,
-      domain: sharedTerm.domain || "court", // safe default
+      domain: sharedTerm.domain || "court",
       source_text: (sharedTerm.source_text || "").trim(),
       target_text: (sharedTerm.target_text || "").trim(),
       notes: null,
@@ -372,4 +378,4 @@ export default function Glossary() {
       </div>
     </div>
   );
-} 
+}
