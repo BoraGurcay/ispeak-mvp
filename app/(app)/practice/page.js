@@ -3,10 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 
-/** ---------- Normalization / alternatives helpers ---------- */
+/** ---------------- Helpers (simple + reliable) ---------------- **/
+
 function stripBracketed(s) {
-  // remove ( ... ), [ ... ], { ... }
+  // remove (...), [...], {...}
   return (s || "")
+    .toString()
     .replace(/\(([^)]*)\)/g, " ")
     .replace(/\[([^\]]*)\]/g, " ")
     .replace(/\{([^}]*)\}/g, " ");
@@ -22,101 +24,58 @@ function stripDiacritics(s) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
-function normalize(s) {
+function normalizeAnswer(s) {
   return stripDiacritics(stripBracketed(s))
     .toLowerCase()
-    .replace(/[“”]/g, '"')
-    .replace(/[’‘]/g, "'")
-    .replace(/[—–]/g, "-")
+    .replace(/[^a-z0-9\s'-]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function extractAlternatives(rawTarget) {
-  // split on / ; , and also treat bracketed parts as ignorable
-  const t = (rawTarget || "").toString();
-  const parts = t
-    .split(/[\/;,]/g)
-    .map((p) => p.trim())
-    .filter(Boolean);
-
-  // also include full target as an option
-  const all = [t.trim(), ...parts].filter(Boolean);
-
-  // normalize & dedupe
-  const seen = new Set();
-  const out = [];
-  for (const a of all) {
-    const n = normalize(a);
-    if (!n) continue;
-    if (seen.has(n)) continue;
-    seen.add(n);
-    out.push(a);
-  }
-  return out;
-}
-
-function findMatchedAlternative(guess, rawTarget) {
-  const g = normalize(guess);
-  if (!g) return null;
-
-  // Accept exact normalized match against any alternative.
-  const alts = extractAlternatives(rawTarget);
-  for (const a of alts) {
-    if (normalize(a) === g) return a;
-  }
-
-  // Also accept match if user includes punctuation/spaces differences
-  const g2 = g.replace(/[^a-z0-9]+/g, "");
-  for (const a of alts) {
-    const a2 = normalize(a).replace(/[^a-z0-9]+/g, "");
-    if (a2 && a2 === g2) return a;
-  }
-
-  return null;
-}
-
-function pickRandomTerm(arr) {
+function pickRandom(arr) {
   if (!arr || arr.length === 0) return null;
-  const i = Math.floor(Math.random() * arr.length);
-  return arr[i];
+  const idx = Math.floor(Math.random() * arr.length);
+  return arr[idx];
 }
+
+/** ---------------- Page ---------------- **/
+
+const LANGUAGES = [
+  { value: "tr", label: "Turkish (TR)" },
+  { value: "fr", label: "French (FR)" },
+];
 
 export default function PracticePage() {
+  const inputRef = useRef(null);
+
   const [lang, setLang] = useState("tr");
   const [mode, setMode] = useState("normal"); // "normal" | "hard"
+
+  const [loading, setLoading] = useState(true);
+  const [dataSource, setDataSource] = useState("(loading)");
   const [pool, setPool] = useState([]);
   const [current, setCurrent] = useState(null);
+
   const [answer, setAnswer] = useState("");
-  const [accepted, setAccepted] = useState([]);
-  const [matchedAlt, setMatchedAlt] = useState(null);
-  const [dataSource, setDataSource] = useState("(none)");
-  const [loading, setLoading] = useState(true);
+  const [feedback, setFeedback] = useState(null); // { ok: boolean, msg: string }
+
   const [score, setScore] = useState(0);
   const [streak, setStreak] = useState(0);
 
-  const inputRef = useRef(null);
-
-  const languages = [
-    { value: "tr", label: "Turkish (TR)" },
-    { value: "fr", label: "French (FR)" },
-  ];
-
+  // Filter by mode after load
   const filteredPool = useMemo(() => {
     if (mode === "hard") {
-      // simple hard filter: longer target OR multiple alternatives
-      return pool.filter((t) => {
-        const tgt = (t.target_text || "").toString();
-        return tgt.length >= 18 || extractAlternatives(tgt).length >= 2;
-      });
+      return pool.filter((t) => (t.difficulty ?? 1) >= 3);
     }
     return pool;
   }, [pool, mode]);
 
+  // Update current when mode/pool changes
   useEffect(() => {
-    setCurrent(pickRandomTerm(filteredPool));
-  }, [mode, filteredPool]);
+    setCurrent(pickRandom(filteredPool));
+  }, [filteredPool, mode]);
 
+  // Load pool when language changes
   useEffect(() => {
     let cancelled = false;
 
@@ -125,78 +84,76 @@ export default function PracticePage() {
       setDataSource("(loading)");
       setPool([]);
       setCurrent(null);
+      setAnswer("");
+      setFeedback(null);
 
-      // 1) Try shared terms
+      // 1) Shared terms from `terms`
       const sharedRes = await supabase
         .from("terms")
-        .select("id, source, target, domain, lang")
-        .eq("lang", lang);
+        .select("id, source_text, target_text, domain, target_lang, difficulty")
+        .eq("target_lang", lang);
 
-      // 2) Try personal terms if logged in (optional)
-      // If you don't have user_terms table, this will fail gracefully.
+      // 2) Personal terms from `user_terms` (optional)
+      let personal = [];
       let uid = null;
-      try {
-        const { data: authData } = await supabase.auth.getUser();
-        uid = authData?.user?.id || null;
-      } catch (_) {}
 
-      let personalRes = { data: [], error: null };
+      const authRes = await supabase.auth.getUser();
+      uid = authRes?.data?.user?.id ?? null;
+
       if (uid) {
-        personalRes = await supabase
+        const personalRes = await supabase
           .from("user_terms")
-          .select("id, source, target, domain, lang")
+          .select("id, source_text, target_text, domain, target_lang, difficulty, user_id")
           .eq("user_id", uid)
-          .eq("lang", lang);
+          .eq("target_lang", lang);
+
+        if (personalRes?.error) {
+          console.warn("personal terms load warning:", personalRes.error.message);
+        } else {
+          personal = (personalRes.data || []).map((r) => ({
+            id: r.id,
+            source: r.source_text,
+            target: r.target_text,
+            domain: r.domain ?? "unassigned",
+            lang: r.target_lang,
+            difficulty: r.difficulty ?? 1,
+            _origin: "personal",
+          }));
+        }
       }
 
-      // If either query errors, log details
-      if (sharedRes.error || personalRes.error) {
-        const err = sharedRes.error || personalRes.error;
-        console.error("practice load error (raw):", err);
-        // This helps because Next overlay often shows {} otherwise:
-        try {
-          console.error(
-            "practice load error (json):",
-            JSON.stringify(err, Object.getOwnPropertyNames(err), 2)
-          );
-        } catch (_) {}
+      if (sharedRes?.error) {
+        console.error("practice shared terms error:", sharedRes.error.message);
+      }
 
+      if (sharedRes?.error) {
+        // If shared fails, we still show personal (if any), otherwise show error
+        const mergedOnlyPersonal = personal;
         if (!cancelled) {
-          setDataSource("(error)");
-          setPool([]);
-          setCurrent(null);
+          setPool(mergedOnlyPersonal);
+          setCurrent(pickRandom(mergedOnlyPersonal));
+          setDataSource(mergedOnlyPersonal.length ? "personal" : "(error)");
           setLoading(false);
         }
         return;
       }
 
-      // Map DB columns source/target into the keys the practice UI expects
-      const shared = (sharedRes.data || []).map((t) => ({
-        client_id: `s_${t.id}`,
-        term_id: t.id,
-        kind: "shared",
-        source_text: t.source,
-        target_text: t.target,
-        domain: t.domain,
-        lang: t.lang,
-      }));
-
-      const personal = (personalRes.data || []).map((t) => ({
-        client_id: `p_${t.id}`,
-        term_id: t.id,
-        kind: "personal",
-        source_text: t.source,
-        target_text: t.target,
-        domain: t.domain,
-        lang: t.lang,
+      const shared = (sharedRes.data || []).map((r) => ({
+        id: r.id,
+        source: r.source_text,
+        target: r.target_text,
+        domain: r.domain ?? "unassigned",
+        lang: r.target_lang,
+        difficulty: r.difficulty ?? 1,
+        _origin: "shared",
       }));
 
       const merged = [...shared, ...personal];
 
       if (!cancelled) {
-        setDataSource(uid ? "shared + my terms" : "shared only (not logged in)");
         setPool(merged);
-        setCurrent(pickRandomTerm(merged));
+        setCurrent(pickRandom(merged));
+        setDataSource(uid ? "shared+personal" : "shared");
         setLoading(false);
 
         // focus input
@@ -205,6 +162,7 @@ export default function PracticePage() {
     }
 
     loadPool();
+
     return () => {
       cancelled = true;
     };
@@ -213,46 +171,55 @@ export default function PracticePage() {
   async function checkAnswer() {
     if (!current) return;
 
-    const guess = answer;
-    const target = current?.target_text || "";
+    const guess = normalizeAnswer(answer);
+    const target = normalizeAnswer(current.target);
 
-    const alts = extractAlternatives(target);
-    const matched = findMatchedAlternative(guess, target);
+    if (!guess) return;
 
-    setAccepted(alts);
-    setMatchedAlt(matched);
+    const ok = guess === target;
 
-    const isCorrect = matched !== null;
-
-    if (isCorrect) {
+    if (ok) {
       setScore((s) => s + 1);
       setStreak((s) => s + 1);
+      setFeedback({ ok: true, msg: "Correct ✅" });
+
+      // next
+      const next = pickRandom(filteredPool);
+      setCurrent(next);
+      setAnswer("");
+      setTimeout(() => inputRef.current?.focus?.(), 50);
     } else {
       setStreak(0);
+      setFeedback({
+        ok: false,
+        msg: `Not quite. Correct: ${current.target}`,
+      });
     }
+  }
 
-    // Move to next
-    setAnswer("");
-    const next = pickRandomTerm(filteredPool);
+  function skip() {
+    const next = pickRandom(filteredPool);
     setCurrent(next);
+    setAnswer("");
+    setFeedback(null);
     setTimeout(() => inputRef.current?.focus?.(), 50);
   }
 
-  return (
-    <div style={{ maxWidth: 720, margin: "0 auto", padding: 24 }}>
-      <h1 style={{ fontSize: 40, fontWeight: 700, marginBottom: 16 }}>
-        Practice
-      </h1>
+  const langLabel = LANGUAGES.find((l) => l.value === lang)?.label ?? lang;
 
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 16 }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <div style={{ opacity: 0.6 }}>Language</div>
+  return (
+    <div style={{ maxWidth: 900, margin: "0 auto", padding: 24 }}>
+      <h1 style={{ fontSize: 42, margin: 0 }}>Practice</h1>
+
+      <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 14, opacity: 0.7 }}>Language</div>
           <select
             value={lang}
             onChange={(e) => setLang(e.target.value)}
-            style={{ padding: 10, borderRadius: 10 }}
+            style={{ padding: "10px 12px", borderRadius: 10 }}
           >
-            {languages.map((l) => (
+            {LANGUAGES.map((l) => (
               <option key={l.value} value={l.value}>
                 {l.label}
               </option>
@@ -260,7 +227,7 @@ export default function PracticePage() {
           </select>
         </div>
 
-        <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ display: "flex", gap: 8, marginLeft: 12, alignItems: "end" }}>
           <button
             onClick={() => setMode("normal")}
             style={{
@@ -269,7 +236,7 @@ export default function PracticePage() {
               border: "1px solid #ddd",
               background: mode === "normal" ? "#111" : "#fff",
               color: mode === "normal" ? "#fff" : "#111",
-              fontWeight: 600,
+              cursor: "pointer",
             }}
           >
             Normal
@@ -282,38 +249,49 @@ export default function PracticePage() {
               border: "1px solid #ddd",
               background: mode === "hard" ? "#111" : "#fff",
               color: mode === "hard" ? "#fff" : "#111",
-              fontWeight: 600,
+              cursor: "pointer",
             }}
           >
             Hard Words
           </button>
         </div>
 
-        <div style={{ marginLeft: "auto", textAlign: "right", opacity: 0.75 }}>
-          <div>
-            Score: {score} &nbsp;&nbsp; Streak: {streak}
+        <div style={{ marginLeft: "auto", textAlign: "right" }}>
+          <div style={{ fontSize: 14, opacity: 0.7 }}>
+            Score: <b>{score}</b> &nbsp;&nbsp; Streak: <b>{streak}</b>
           </div>
-          <div style={{ fontSize: 12 }}>
-            Data source: <b>{dataSource}</b> · Pool size: {filteredPool.length}
+          <div style={{ fontSize: 12, opacity: 0.6 }}>
+            Data source: <b>{dataSource}</b> · Pool size: <b>{filteredPool.length}</b>
           </div>
         </div>
       </div>
 
-      <div style={{ marginTop: 28 }}>
+      <div style={{ marginTop: 24 }}>
         {loading ? (
-          <div style={{ fontSize: 22, opacity: 0.6 }}>Loading...</div>
+          <div style={{ opacity: 0.7 }}>Loading…</div>
+        ) : filteredPool.length === 0 ? (
+          <div style={{ opacity: 0.7 }}>No terms found for {langLabel}.</div>
         ) : !current ? (
-          <div style={{ opacity: 0.7 }}>
-            No terms found for this language.
-          </div>
+          <div style={{ opacity: 0.7 }}>Pick a term…</div>
         ) : (
-          <>
-            <div style={{ fontSize: 18, opacity: 0.65 }}>Translate:</div>
-            <div style={{ fontSize: 34, fontWeight: 700, marginTop: 8 }}>
-              {current.source_text}
+          <div
+            style={{
+              marginTop: 12,
+              padding: 18,
+              border: "1px solid #eee",
+              borderRadius: 16,
+              background: "#fff",
+            }}
+          >
+            <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 6 }}>
+              Domain: <b>{current.domain}</b> · Difficulty: <b>{current.difficulty ?? 1}</b>
             </div>
 
-            <div style={{ marginTop: 20, display: "flex", gap: 10 }}>
+            <div style={{ fontSize: 28, fontWeight: 700, marginBottom: 12 }}>
+              {current.source}
+            </div>
+
+            <div style={{ display: "flex", gap: 10 }}>
               <input
                 ref={inputRef}
                 value={answer}
@@ -321,10 +299,10 @@ export default function PracticePage() {
                 onKeyDown={(e) => {
                   if (e.key === "Enter") checkAnswer();
                 }}
-                placeholder="Type your answer…"
+                placeholder={`Type the ${langLabel} translation…`}
                 style={{
                   flex: 1,
-                  padding: 14,
+                  padding: "12px 14px",
                   borderRadius: 12,
                   border: "1px solid #ddd",
                   fontSize: 16,
@@ -333,33 +311,37 @@ export default function PracticePage() {
               <button
                 onClick={checkAnswer}
                 style={{
-                  padding: "14px 18px",
+                  padding: "12px 14px",
                   borderRadius: 12,
-                  border: "1px solid #111",
+                  border: "1px solid #ddd",
                   background: "#111",
                   color: "#fff",
-                  fontWeight: 700,
+                  cursor: "pointer",
                 }}
               >
                 Check
               </button>
+              <button
+                onClick={skip}
+                style={{
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  border: "1px solid #ddd",
+                  background: "#fff",
+                  color: "#111",
+                  cursor: "pointer",
+                }}
+              >
+                Skip
+              </button>
             </div>
 
-            {accepted.length > 0 && (
-              <div style={{ marginTop: 14, opacity: 0.9 }}>
-                <div style={{ fontWeight: 700 }}>
-                  Accepted answers:
-                </div>
-                <div style={{ marginTop: 6 }}>
-                  {accepted.join(" · ")}
-                </div>
-                <div style={{ marginTop: 6 }}>
-                  Matched:{" "}
-                  <b>{matchedAlt ? matchedAlt : "—"}</b>
-                </div>
+            {feedback && (
+              <div style={{ marginTop: 12, fontSize: 14, color: feedback.ok ? "green" : "crimson" }}>
+                {feedback.msg}
               </div>
             )}
-          </>
+          </div>
         )}
       </div>
     </div>
