@@ -12,6 +12,8 @@ const domains = [
 const languages = [
   { value: "tr", label: "Turkish (TR)" },
   { value: "fr", label: "French (FR)" },
+  { value: "es", label: "Spanish (ES)" },
+  { value: "pt", label: "Portuguese (PT)" },
 ];
 
 function domainLabel(value) {
@@ -58,7 +60,9 @@ export default function Glossary() {
   // Load saved language
   useEffect(() => {
     const saved = localStorage.getItem("ispeak_target_lang");
-    if (saved === "tr" || saved === "fr") setTargetLang(saved);
+    if (saved === "tr" || saved === "fr" || saved === "es" || saved === "pt") {
+      setTargetLang(saved);
+    }
   }, []);
 
   useEffect(() => {
@@ -69,7 +73,9 @@ export default function Glossary() {
 
   // Use the row’s own target_lang for the key (more robust)
   function termKey(it) {
-    return `${normalizeKey(it.domain)}|${normalizeKey(it.source_text)}|${normalizeKey(it.target_lang || targetLang)}`;
+    return `${normalizeKey(it.domain)}|${normalizeKey(it.source_text)}|${normalizeKey(
+      it.target_lang || targetLang
+    )}`;
   }
 
   const filtered = useMemo(() => {
@@ -294,12 +300,29 @@ export default function Glossary() {
             placeholder="e.g., adjournment"
           />
 
-          <label className="small muted">{targetLang === "tr" ? "Turkish" : "French"}</label>
+          <label className="small muted">
+            {targetLang === "tr"
+              ? "Turkish"
+              : targetLang === "fr"
+              ? "French"
+              : targetLang === "es"
+              ? "Spanish"
+              : "Portuguese"}
+          </label>
+
           <input
             className="input"
             value={form.target_text}
             onChange={(e) => setForm({ ...form, target_text: e.target.value })}
-            placeholder={targetLang === "tr" ? "e.g., duruşmanın ertelenmesi" : "e.g., ajournement"}
+            placeholder={
+              targetLang === "tr"
+                ? "e.g., duruşmanın ertelenmesi"
+                : targetLang === "fr"
+                ? "e.g., ajournement"
+                : targetLang === "es"
+                ? "e.g., aplazamiento"
+                : "e.g., adiamento"
+            }
           />
 
           <label className="small muted">Notes (optional)</label>
