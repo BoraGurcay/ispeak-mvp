@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 
 /** ---------------- Normalization / alternatives helpers ---------------- */
+
 function stripBracketed(s) {
   // remove ( ... ), [ ... ], { ... }
   return (s || "")
@@ -22,7 +23,7 @@ function stripDiacritics(s) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
-function normalizeAnswer(s) {
+function baseNormalize(s) {
   // Keep letters/digits/apostrophes/hyphens/spaces.
   // Roman Arabic often has numbers like 3/7/2/5 and apostrophes.
   return stripDiacritics(stripBracketed(s))
@@ -30,6 +31,46 @@ function normalizeAnswer(s) {
     .replace(/[^a-z0-9\s'-]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/**
+* Roman Arabic tolerance:
+* - ignore apostrophes and hyphens
+* - ignore common chat numbers (2,3,5,6,7,8,9)
+* - collapse common digraphs into single tokens so variants match:
+*   kh/gh/sh/th/dh
+*/
+function normalizeRomanArabic(s) {
+  let x = baseNormalize(s);
+
+  // unify apostrophe variants (already mostly filtered, but just in case)
+  x = x.replace(/[’‘`´]/g, "'");
+
+  // remove apostrophes + hyphens entirely (users often omit them)
+  x = x.replace(/['-]/g, "");
+
+  // ignore common roman-arabic numerals (2 3 5 6 7 8 9)
+  // (keeping 0/1/4 can be useful sometimes, but you can remove them too if you want)
+  x = x.replace(/[2356789]/g, "");
+
+  // collapse common digraphs → single tokens
+  // This helps if target has "kh" but user types "h" or "7" etc.
+  x = x
+    .replace(/\bkh/g, "x")
+    .replace(/\bgh/g, "g")
+    .replace(/\bsh/g, "s")
+    .replace(/\bth/g, "t")
+    .replace(/\bdh/g, "d");
+
+  // final whitespace cleanup
+  x = x.replace(/\s+/g, " ").trim();
+
+  return x;
+}
+
+function normalizeAnswerForLang(s, lang) {
+  if (lang === "ar") return normalizeRomanArabic(s);
+  return baseNormalize(s);
 }
 
 function pickRandom(arr) {
@@ -82,6 +123,7 @@ function domainLabel(value) {
 }
 
 /** ---------------- Page ---------------- */
+
 export default function PracticePage() {
   const inputRef = useRef(null);
 
@@ -128,7 +170,7 @@ export default function PracticePage() {
       // 1) Shared terms
       const sharedRes = await supabase
         .from("terms")
-        .select("id, source_text, target_text, domain, target_lang")
+        .select("id, source_text, target_text, domain, target_lang, difficulty")
         .eq("source_lang", "en")
         .eq("target_lang", lang)
         .limit(5000);
@@ -142,7 +184,7 @@ export default function PracticePage() {
         if (user) {
           personalRes = await supabase
             .from("user_terms")
-            .select("id, source_text, target_text, domain, target_lang, created_at")
+            .select("id, source_text, target_text, domain, target_lang, difficulty, created_at")
             .eq("source_lang", "en")
             .eq("target_lang", lang)
             .order("created_at", { ascending: false })
@@ -154,12 +196,8 @@ export default function PracticePage() {
 
       if (cancelled) return;
 
-      if (sharedRes.error) {
-        console.error("practice shared load error:", sharedRes.error);
-      }
-      if (personalRes.error) {
-        console.error("practice personal load error:", personalRes.error);
-      }
+      if (sharedRes.error) console.error("practice shared load error:", sharedRes.error);
+      if (personalRes.error) console.error("practice personal load error:", personalRes.error);
 
       const shared = (sharedRes.data || []).map((t) => ({ ...t, __kind: "shared" }));
       const personal = (personalRes.data || []).map((t) => ({ ...t, __kind: "personal" }));
@@ -181,7 +219,6 @@ export default function PracticePage() {
       setCurrent(pickRandom(merged));
       setLoading(false);
 
-      // focus input
       setTimeout(() => inputRef.current?.focus?.(), 50);
     }
 
@@ -206,8 +243,8 @@ export default function PracticePage() {
     const guess = answer;
     const target = current?.target_text || "";
 
-    const normGuess = normalizeAnswer(guess);
-    const normTarget = normalizeAnswer(target);
+    const normGuess = normalizeAnswerForLang(guess, lang);
+    const normTarget = normalizeAnswerForLang(target, lang);
 
     const ok = normGuess.length > 0 && normGuess === normTarget;
 
@@ -226,8 +263,6 @@ export default function PracticePage() {
 
     setTimeout(() => inputRef.current?.focus?.(), 50);
   }
-
-  const poolSize = filteredPool.length ? filteredPool.length : pool.length;
 
   return (
     <div className="container">
@@ -279,16 +314,15 @@ export default function PracticePage() {
 
         {!loading && (!pool || pool.length === 0) ? (
           <div className="muted">
-            No terms found for <b>{langLabel(lang)}</b>. (Make sure your rows in Supabase have <code>source_lang = en</code>{" "}
-            and <code>target_lang = {lang}</code>.)
+            No terms found for <b>{langLabel(lang)}</b>. (Make sure your rows in Supabase have{" "}
+            <code>source_lang = en</code> and <code>target_lang = {lang}</code>.)
           </div>
         ) : null}
 
         {!loading && current ? (
           <div className="card" style={{ padding: 16 }}>
             <div className="small muted">
-              Domain: <b>{domainLabel(current.domain)}</b> • Difficulty:{" "}
-              <b>{current.difficulty ?? 1}</b>
+              Domain: <b>{domainLabel(current.domain)}</b> • Difficulty: <b>{current.difficulty ?? 1}</b>
             </div>
 
             <div style={{ fontSize: 34, fontWeight: 800, marginTop: 10 }}>{current.source_text}</div>
@@ -328,10 +362,7 @@ export default function PracticePage() {
               </div>
             ) : null}
 
-            <div className="small muted" style={{ marginTop: 10 }}>
-              Pool size: <b>{poolSize}</b>
-              {mode === "hard" ? <span> (hard words)</span> : null}
-            </div>
+            {/* Pool size hidden (no debug UI for sharing) */}
           </div>
         ) : null}
       </div>
