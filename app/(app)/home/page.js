@@ -21,7 +21,7 @@ export default function Home() {
       <div className="card">
         <div className="h2">What’s next</div>
         <div className="small muted">
-          Premium AI explainer, subscription, and an invoice helper can be added after the MVP.
+          Premium AI explainer & advanced tools coming after beta.
         </div>
       </div>
     </div>
