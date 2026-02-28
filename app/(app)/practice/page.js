@@ -32,17 +32,18 @@ function stripDiacritics(s) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
-// IMPORTANT: this normalization is what makes answers forgiving.
+// Forgiving normalization:
+// - accents removed
+// - brackets removed
+// - lowercased
+// - hyphens treated as spaces
+// - apostrophes removed (optional)
 function normalizeAnswer(s) {
   return stripDiacritics(stripBracketed(s))
     .toLowerCase()
-    // normalize different apostrophe styles
     .replace(/[’`]/g, "'")
-    // treat hyphens as spaces (so "al-sulh" == "al sulh")
     .replace(/-/g, " ")
-    // make apostrophes optional for roman Arabic (so "isti'naf" == "istinaf")
     .replace(/'/g, "")
-    // keep only a-z, 0-9, and spaces
     .replace(/[^a-z0-9\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -62,7 +63,7 @@ const LANGUAGES = [
   { value: "es", label: "Spanish (ES)" },
   { value: "pt", label: "Portuguese (PT)" },
   { value: "hi", label: "Hindi (HI)" },
-  { value: "ar", label: "Arabic (AR)" }, // <-- renamed (was Roman Arabic)
+  { value: "ar", label: "Arabic (AR)" },
 ];
 
 export default function PracticePage() {
@@ -70,9 +71,6 @@ export default function PracticePage() {
 
   const [lang, setLang] = useState("tr");
   const [mode, setMode] = useState("normal"); // "normal" | "hard"
-
-  const [sharedPool, setSharedPool] = useState([]);
-  const [personalPool, setPersonalPool] = useState([]);
 
   const [pool, setPool] = useState([]);
   const [term, setTerm] = useState(null);
@@ -83,20 +81,26 @@ export default function PracticePage() {
   const [streak, setStreak] = useState(0);
 
   const [loading, setLoading] = useState(false);
+  const [fatalError, setFatalError] = useState(null);
 
   const selectedLangLabel = useMemo(() => {
     return LANGUAGES.find((l) => l.value === lang)?.label || lang;
   }, [lang]);
 
-  // Fetch both shared + personal, then merge
   async function loadPool() {
-    if (!supabase) return;
-
     setLoading(true);
     setFeedback(null);
+    setFatalError(null);
 
     try {
-      // Shared terms (public, created by you / the project) live in user_terms with is_shared=true
+      if (!supabase) {
+        setFatalError("Supabase is not configured (missing env vars).");
+        setPool([]);
+        setTerm(null);
+        return;
+      }
+
+      // 1) Always load SHARED terms (these should be readable publicly)
       const sharedRes = await supabase
         .from("user_terms")
         .select("*")
@@ -104,8 +108,18 @@ export default function PracticePage() {
         .eq("source_lang", "en")
         .eq("target_lang", lang);
 
-      // Personal terms (user-added) - if your app uses auth, this may be filtered by user_id
-      // If your table is public for personal terms too, this will still work.
+      if (sharedRes.error) {
+        console.error("Shared terms load failed:", sharedRes.error);
+        setFatalError("Could not load shared terms.");
+        setPool([]);
+        setTerm(null);
+        return;
+      }
+
+      const shared = sharedRes.data || [];
+
+      // 2) Try to load PERSONAL terms, but DO NOT fail if blocked by RLS
+      let personal = [];
       const personalRes = await supabase
         .from("user_terms")
         .select("*")
@@ -113,43 +127,28 @@ export default function PracticePage() {
         .eq("source_lang", "en")
         .eq("target_lang", lang);
 
-      if (sharedRes.error || personalRes.error) {
-        const err = sharedRes.error || personalRes.error;
-        console.error("practice load error (raw):", err);
-        setSharedPool([]);
-        setPersonalPool([]);
-        setPool([]);
-        setTerm(null);
-        setLoading(false);
-        return;
+      if (personalRes.error) {
+        // This is the key fix:
+        // On Vercel, personal terms may be blocked (no auth). We ignore and continue.
+        console.warn("Personal terms blocked/unavailable, continuing with shared only:", personalRes.error);
+        personal = [];
+      } else {
+        personal = personalRes.data || [];
       }
-
-      const shared = sharedRes.data || [];
-      const personal = personalRes.data || [];
-
-      setSharedPool(shared);
-      setPersonalPool(personal);
 
       const merged = [...shared, ...personal];
 
-      // Hard words mode: prioritize items user missed (if you track it) — otherwise same pool
-      // If your schema has a "wrong_count" or "difficulty" column, you can change this.
+      // Optional: "hard" mode placeholder (kept same behavior)
       let filtered = merged;
-      if (mode === "hard") {
-        // Example: if you have wrong_count in your table, use it:
-        // filtered = merged.filter(t => (t.wrong_count || 0) > 0);
-        filtered = merged; // fallback (no schema dependency)
-      }
+      if (mode === "hard") filtered = merged;
 
       setPool(filtered);
 
-      // pick first term
       const first = pickRandom(filtered);
       setTerm(first);
       setAnswer("");
       setFeedback(null);
 
-      // focus input
       setTimeout(() => inputRef.current?.focus(), 50);
     } finally {
       setLoading(false);
@@ -193,13 +192,13 @@ export default function PracticePage() {
   function onKeyDown(e) {
     if (e.key === "Enter") {
       e.preventDefault();
-      if (!feedback) {
-        checkAnswer();
-      } else {
-        nextTerm();
-      }
+      if (!feedback) checkAnswer();
+      else nextTerm();
     }
   }
+
+  const titleText =
+    loading ? "Loading..." : term?.source_text || (fatalError ? "Error" : "No terms found");
 
   return (
     <div style={{ maxWidth: 980, margin: "0 auto", padding: "28px 18px" }}>
@@ -276,8 +275,6 @@ export default function PracticePage() {
             <span style={{ marginRight: 14 }}>Score: {score}</span>
             <span>Streak: {streak}</span>
           </div>
-
-          {/* NOTE: Debug text removed intentionally */}
         </div>
       </div>
 
@@ -294,8 +291,14 @@ export default function PracticePage() {
         </div>
 
         <div style={{ marginTop: 12, fontSize: 46, fontWeight: 900 }}>
-          {term?.source_text || (loading ? "Loading..." : "No terms found")}
+          {titleText}
         </div>
+
+        {fatalError && (
+          <div style={{ marginTop: 10, color: "#b00020" }}>
+            {fatalError}
+          </div>
+        )}
 
         <div
           style={{
@@ -321,6 +324,7 @@ export default function PracticePage() {
               fontSize: 18,
               outline: "none",
             }}
+            disabled={!term}
           />
 
           <button
@@ -337,7 +341,9 @@ export default function PracticePage() {
               fontWeight: 800,
               cursor: "pointer",
               minWidth: 92,
+              opacity: term ? 1 : 0.5,
             }}
+            disabled={!term}
           >
             {feedback ? "Next" : "Check"}
           </button>
@@ -353,7 +359,9 @@ export default function PracticePage() {
               fontWeight: 700,
               cursor: "pointer",
               minWidth: 92,
+              opacity: term ? 1 : 0.5,
             }}
+            disabled={!term}
           >
             Next
           </button>
