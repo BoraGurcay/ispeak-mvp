@@ -3,17 +3,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 
-/* ---------------- Helpers ---------------- */
-
+/** ---------------- Normalization / alternatives helpers ---------------- */
 function stripBracketed(s) {
+  // remove ( ... ), [ ... ], { ... }
   return (s || "")
-    .toString()
     .replace(/\(([^)]*)\)/g, " ")
     .replace(/\[([^\]]*)\]/g, " ")
     .replace(/\{([^}]*)\}/g, " ");
 }
 
 function stripDiacritics(s) {
+  // Handles most accents via NFD + combining marks
+  // Also handles Turkish dotless ı explicitly
   return (s || "")
     .toString()
     .replace(/ı/g, "i")
@@ -22,6 +23,8 @@ function stripDiacritics(s) {
 }
 
 function normalizeAnswer(s) {
+  // Keep letters/digits/apostrophes/hyphens/spaces.
+  // Roman Arabic often has numbers like 3/7/2/5 and apostrophes.
   return stripDiacritics(stripBracketed(s))
     .toLowerCase()
     .replace(/[^a-z0-9\s'-]/g, " ")
@@ -31,67 +34,86 @@ function normalizeAnswer(s) {
 
 function pickRandom(arr) {
   if (!arr || arr.length === 0) return null;
-  return arr[Math.floor(Math.random() * arr.length)];
+  const idx = Math.floor(Math.random() * arr.length);
+  return arr[idx];
 }
 
-/* ---------------- Page ---------------- */
+const DOMAINS = [
+  { value: "court", label: "Court" },
+  { value: "immigration", label: "Immigration" },
+  { value: "family", label: "Family" },
+];
 
 const LANGUAGES = [
   { value: "tr", label: "Turkish (TR)" },
   { value: "fr", label: "French (FR)" },
   { value: "es", label: "Spanish (ES)" },
   { value: "pt", label: "Portuguese (PT)" },
+  { value: "hi", label: "Hindi (HI)" },
+  { value: "ar", label: "Roman Arabic (AR)" },
 ];
 
-const LS_KEY = "ispeak_target_lang";
+function langLabel(lang) {
+  return LANGUAGES.find((l) => l.value === lang)?.label ?? lang;
+}
 
+function targetNameShort(lang) {
+  switch (lang) {
+    case "tr":
+      return "Turkish (TR)";
+    case "fr":
+      return "French (FR)";
+    case "es":
+      return "Spanish (ES)";
+    case "pt":
+      return "Portuguese (PT)";
+    case "hi":
+      return "Hindi (HI)";
+    case "ar":
+      return "Roman Arabic (AR)";
+    default:
+      return lang;
+  }
+}
+
+function domainLabel(value) {
+  const d = DOMAINS.find((x) => x.value === value);
+  return d?.label ?? "Unassigned";
+}
+
+/** ---------------- Page ---------------- */
 export default function PracticePage() {
   const inputRef = useRef(null);
 
   const [lang, setLang] = useState("tr");
-  const [mode, setMode] = useState("normal");
+  const [mode, setMode] = useState("normal"); // "normal" | "hard"
 
   const [loading, setLoading] = useState(true);
   const [pool, setPool] = useState([]);
   const [current, setCurrent] = useState(null);
 
   const [answer, setAnswer] = useState("");
-  const [feedback, setFeedback] = useState(null);
-
+  const [result, setResult] = useState(null); // null | { ok, expected, got }
   const [score, setScore] = useState(0);
   const [streak, setStreak] = useState(0);
 
-  // Restore saved language (so Practice & Glossary stay in sync)
+  // load saved language
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(LS_KEY);
-      if (LANGUAGES.some((l) => l.value === saved)) setLang(saved);
-    } catch {}
+    const saved = localStorage.getItem("ispeak_target_lang");
+    if (["tr", "fr", "es", "pt", "hi", "ar"].includes(saved)) setLang(saved);
   }, []);
 
-  // Persist language
   useEffect(() => {
-    try {
-      localStorage.setItem(LS_KEY, lang);
-    } catch {}
+    localStorage.setItem("ispeak_target_lang", lang);
   }, [lang]);
 
+  // hard words: only show ones you got wrong in this session (simple)
   const filteredPool = useMemo(() => {
     if (mode === "hard") {
-      return pool.filter((t) => (t.difficulty ?? 1) >= 3);
+      return pool.filter((t) => t.__wrong === true);
     }
     return pool;
   }, [pool, mode]);
-
-  useEffect(() => {
-    if (!filteredPool.length) {
-      setCurrent(null);
-      return;
-    }
-    if (!current || !filteredPool.some((t) => t.id === current.id)) {
-      setCurrent(pickRandom(filteredPool));
-    }
-  }, [filteredPool, current]);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,215 +123,217 @@ export default function PracticePage() {
       setPool([]);
       setCurrent(null);
       setAnswer("");
-      setFeedback(null);
+      setResult(null);
 
-      // Shared pack terms
+      // 1) Shared terms
       const sharedRes = await supabase
         .from("terms")
-        .select("id, source_text, target_text, domain, target_lang, difficulty")
-        .eq("target_lang", lang);
+        .select("id, source_text, target_text, domain, target_lang")
+        .eq("source_lang", "en")
+        .eq("target_lang", lang)
+        .limit(5000);
 
-      // Personal terms (if logged in)
-      let personal = [];
-      const authRes = await supabase.auth.getUser();
-      const uid = authRes?.data?.user?.id ?? null;
+      // 2) Personal terms (if logged in)
+      let personalRes = { data: [], error: null };
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        const user = authData?.user;
 
-      if (uid) {
-        const personalRes = await supabase
-          .from("user_terms")
-          .select("id, source_text, target_text, domain, target_lang, difficulty")
-          .eq("user_id", uid)
-          .eq("target_lang", lang);
-
-        if (!personalRes.error) {
-          personal = (personalRes.data || []).map((r) => ({
-            id: r.id,
-            source: r.source_text,
-            target: r.target_text,
-            domain: r.domain ?? "unassigned",
-            difficulty: r.difficulty ?? 1,
-          }));
+        if (user) {
+          personalRes = await supabase
+            .from("user_terms")
+            .select("id, source_text, target_text, domain, target_lang, created_at")
+            .eq("source_lang", "en")
+            .eq("target_lang", lang)
+            .order("created_at", { ascending: false })
+            .limit(5000);
         }
+      } catch (e) {
+        // ignore
       }
 
-      const shared = (sharedRes.data || []).map((r) => ({
-        id: r.id,
-        source: r.source_text,
-        target: r.target_text,
-        domain: r.domain ?? "unassigned",
-        difficulty: r.difficulty ?? 1,
-      }));
+      if (cancelled) return;
 
-      const merged = [...shared, ...personal];
-
-      if (!cancelled) {
-        setPool(merged);
-        setCurrent(pickRandom(merged));
-        setLoading(false);
-        setTimeout(() => inputRef.current?.focus(), 50);
+      if (sharedRes.error) {
+        console.error("practice shared load error:", sharedRes.error);
       }
+      if (personalRes.error) {
+        console.error("practice personal load error:", personalRes.error);
+      }
+
+      const shared = (sharedRes.data || []).map((t) => ({ ...t, __kind: "shared" }));
+      const personal = (personalRes.data || []).map((t) => ({ ...t, __kind: "personal" }));
+
+      // Deduplicate: personal overrides shared if same domain+source_text+target_lang
+      const key = (t) =>
+        `${(t.domain || "").toLowerCase()}|${(t.source_text || "").toLowerCase().trim()}|${(
+          t.target_lang || lang
+        )
+          .toLowerCase()
+          .trim()}`;
+
+      const personalKeys = new Set(personal.map(key));
+      const sharedFiltered = shared.filter((t) => !personalKeys.has(key(t)));
+
+      const merged = [...personal, ...sharedFiltered];
+
+      setPool(merged);
+      setCurrent(pickRandom(merged));
+      setLoading(false);
+
+      // focus input
+      setTimeout(() => inputRef.current?.focus?.(), 50);
     }
 
     loadPool();
+
     return () => {
       cancelled = true;
     };
   }, [lang]);
 
-  function checkAnswer() {
-    if (!current) return;
-
-    const guess = normalizeAnswer(answer);
-    const target = normalizeAnswer(current.target);
-
-    if (!guess) return;
-
-    if (guess === target) {
-      setScore((s) => s + 1);
-      setStreak((s) => s + 1);
-      setFeedback({ ok: true, msg: "Correct ✅" });
-
-      const next = pickRandom(filteredPool);
-      setCurrent(next);
-      setAnswer("");
-      setTimeout(() => inputRef.current?.focus(), 50);
-    } else {
-      setStreak(0);
-      setFeedback({
-        ok: false,
-        msg: `Not quite. Correct: ${current.target}`,
-      });
-    }
-  }
-
   function nextCard() {
-    const next = pickRandom(filteredPool);
+    const next = pickRandom(filteredPool.length ? filteredPool : pool);
     setCurrent(next);
     setAnswer("");
-    setFeedback(null);
-    setTimeout(() => inputRef.current?.focus(), 50);
+    setResult(null);
+    setTimeout(() => inputRef.current?.focus?.(), 50);
   }
 
-  const langLabel = LANGUAGES.find((l) => l.value === lang)?.label ?? lang;
+  async function checkAnswer() {
+    if (!current) return;
+
+    const guess = answer;
+    const target = current?.target_text || "";
+
+    const normGuess = normalizeAnswer(guess);
+    const normTarget = normalizeAnswer(target);
+
+    const ok = normGuess.length > 0 && normGuess === normTarget;
+
+    if (ok) {
+      setScore((s) => s + 1);
+      setStreak((s) => s + 1);
+      setResult({ ok: true });
+    } else {
+      setStreak(0);
+      // mark this one as wrong for hard mode (session-only)
+      setPool((prev) =>
+        prev.map((t) => (t.id === current.id && t.__kind === current.__kind ? { ...t, __wrong: true } : t))
+      );
+      setResult({ ok: false, expected: current.target_text, got: answer });
+    }
+
+    setTimeout(() => inputRef.current?.focus?.(), 50);
+  }
+
+  const poolSize = filteredPool.length ? filteredPool.length : pool.length;
 
   return (
-    <div style={{ maxWidth: 900, margin: "0 auto", padding: 24 }}>
-      <h1 style={{ fontSize: 42, margin: 0 }}>Practice</h1>
+    <div className="container">
+      <div className="card">
+        <div className="h1">Practice</div>
 
-      <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 12 }}>
-        <div>
-          <div style={{ fontSize: 14, opacity: 0.7 }}>Language</div>
-          <select
-            value={lang}
-            onChange={(e) => setLang(e.target.value)}
-            style={{ padding: "10px 12px", borderRadius: 10 }}
-          >
-            {LANGUAGES.map((l) => (
-              <option key={l.value} value={l.value}>
-                {l.label}
-              </option>
-            ))}
-          </select>
-        </div>
+        <div className="row" style={{ justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
+          <div className="row" style={{ gap: 10, alignItems: "center" }}>
+            <div>
+              <div className="small muted">Language</div>
+              <select className="select" value={lang} onChange={(e) => setLang(e.target.value)}>
+                {LANGUAGES.map((l) => (
+                  <option key={l.value} value={l.value}>
+                    {l.label}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-        <div style={{ display: "flex", gap: 8, marginLeft: 12 }}>
-          <button
-            onClick={() => setMode("normal")}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 999,
-              background: mode === "normal" ? "#111" : "#fff",
-              color: mode === "normal" ? "#fff" : "#111",
-              border: "1px solid #ddd",
-            }}
-          >
-            Normal
-          </button>
+            <div className="row" style={{ gap: 8, marginTop: 18 }}>
+              <button
+                className={mode === "normal" ? "btn btnPrimary" : "btn"}
+                type="button"
+                onClick={() => setMode("normal")}
+              >
+                Normal
+              </button>
+              <button
+                className={mode === "hard" ? "btn btnPrimary" : "btn"}
+                type="button"
+                onClick={() => setMode("hard")}
+              >
+                Hard Words
+              </button>
+            </div>
+          </div>
 
-          <button
-            onClick={() => setMode("hard")}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 999,
-              background: mode === "hard" ? "#111" : "#fff",
-              color: mode === "hard" ? "#fff" : "#111",
-              border: "1px solid #ddd",
-            }}
-          >
-            Hard Words
-          </button>
-        </div>
-
-        <div style={{ marginLeft: "auto", textAlign: "right" }}>
-          <div style={{ fontSize: 14, opacity: 0.7 }}>
-            Score: <b>{score}</b> &nbsp;&nbsp; Streak: <b>{streak}</b>
+          <div style={{ textAlign: "right" }}>
+            <div className="small muted">
+              Score: <b>{score}</b> &nbsp; Streak: <b>{streak}</b>
+            </div>
+            {/* Debug text intentionally hidden */}
           </div>
         </div>
-      </div>
 
-      <div style={{ marginTop: 24 }}>
-        {loading ? (
-          <div>Loading…</div>
-        ) : !current ? (
-          <div>No terms found.</div>
-        ) : (
-          <div
-            style={{
-              padding: 18,
-              border: "1px solid #eee",
-              borderRadius: 16,
-              background: "#fff",
-            }}
-          >
-            <div style={{ fontSize: 12, opacity: 0.6 }}>
-              Domain: <b>{current.domain}</b> · Difficulty: <b>{current.difficulty ?? 1}</b>
+        <div className="hr" />
+
+        {loading ? <div className="muted">Loading…</div> : null}
+
+        {!loading && (!pool || pool.length === 0) ? (
+          <div className="muted">
+            No terms found for <b>{langLabel(lang)}</b>. (Make sure your rows in Supabase have <code>source_lang = en</code>{" "}
+            and <code>target_lang = {lang}</code>.)
+          </div>
+        ) : null}
+
+        {!loading && current ? (
+          <div className="card" style={{ padding: 16 }}>
+            <div className="small muted">
+              Domain: <b>{domainLabel(current.domain)}</b> • Difficulty:{" "}
+              <b>{current.difficulty ?? 1}</b>
             </div>
 
-            <div style={{ fontSize: 28, fontWeight: 700, margin: "12px 0" }}>
-              {current.source}
-            </div>
+            <div style={{ fontSize: 34, fontWeight: 800, marginTop: 10 }}>{current.source_text}</div>
 
-            <div style={{ display: "flex", gap: 10 }}>
+            <div className="row" style={{ gap: 10, marginTop: 14, alignItems: "center" }}>
               <input
                 ref={inputRef}
+                className="input"
                 value={answer}
                 onChange={(e) => setAnswer(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && checkAnswer()}
-                placeholder={`Type the ${langLabel} translation…`}
-                style={{ flex: 1, padding: 12, borderRadius: 12, border: "1px solid #ddd" }}
+                placeholder={`Type the ${targetNameShort(lang)} translation…`}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") checkAnswer();
+                }}
               />
 
-              <button
-                onClick={checkAnswer}
-                style={{
-                  padding: 12,
-                  borderRadius: 12,
-                  background: "#111",
-                  color: "#fff",
-                }}
-              >
+              <button className="btn btnPrimary" onClick={checkAnswer} type="button">
                 Check
               </button>
 
-              <button
-                onClick={nextCard}
-                style={{
-                  padding: 12,
-                  borderRadius: 12,
-                  border: "1px solid #ddd",
-                }}
-              >
+              <button className="btn" onClick={nextCard} type="button">
                 Next
               </button>
             </div>
 
-            {feedback && (
-              <div style={{ marginTop: 12, color: feedback.ok ? "green" : "crimson" }}>
-                {feedback.msg}
+            {result?.ok === true ? (
+              <div className="small" style={{ marginTop: 10 }}>
+                Correct ✅
               </div>
-            )}
+            ) : null}
+
+            {result?.ok === false ? (
+              <div className="small" style={{ marginTop: 10 }}>
+                <div>
+                  Incorrect ❌ <span className="muted">(expected)</span>: <b>{result.expected}</b>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="small muted" style={{ marginTop: 10 }}>
+              Pool size: <b>{poolSize}</b>
+              {mode === "hard" ? <span> (hard words)</span> : null}
+            </div>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

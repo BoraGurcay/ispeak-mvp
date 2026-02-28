@@ -14,6 +14,8 @@ const languages = [
   { value: "fr", label: "French (FR)" },
   { value: "es", label: "Spanish (ES)" },
   { value: "pt", label: "Portuguese (PT)" },
+  { value: "hi", label: "Hindi (HI)" },
+  { value: "ar", label: "Roman Arabic (AR)" },
 ];
 
 function domainLabel(value) {
@@ -23,6 +25,44 @@ function domainLabel(value) {
 
 function normalizeKey(s) {
   return (s || "").toString().trim().toLowerCase();
+}
+
+function targetLabel(targetLang) {
+  switch (targetLang) {
+    case "tr":
+      return "Turkish";
+    case "fr":
+      return "French";
+    case "es":
+      return "Spanish";
+    case "pt":
+      return "Portuguese";
+    case "hi":
+      return "Hindi (Roman)";
+    case "ar":
+      return "Roman Arabic";
+    default:
+      return "Translation";
+  }
+}
+
+function targetPlaceholder(targetLang) {
+  switch (targetLang) {
+    case "tr":
+      return "e.g., duruşmanın ertelenmesi";
+    case "fr":
+      return "e.g., ajournement";
+    case "es":
+      return "e.g., aplazamiento";
+    case "pt":
+      return "e.g., adiamento";
+    case "hi":
+      return "e.g., nyayalaya";
+    case "ar":
+      return "e.g., mahkama / 3am / 7aqq";
+    default:
+      return "e.g., translation";
+  }
 }
 
 export default function Glossary() {
@@ -60,7 +100,7 @@ export default function Glossary() {
   // Load saved language
   useEffect(() => {
     const saved = localStorage.getItem("ispeak_target_lang");
-    if (saved === "tr" || saved === "fr" || saved === "es" || saved === "pt") {
+    if (["tr", "fr", "es", "pt", "hi", "ar"].includes(saved)) {
       setTargetLang(saved);
     }
   }, []);
@@ -300,29 +340,13 @@ export default function Glossary() {
             placeholder="e.g., adjournment"
           />
 
-          <label className="small muted">
-            {targetLang === "tr"
-              ? "Turkish"
-              : targetLang === "fr"
-              ? "French"
-              : targetLang === "es"
-              ? "Spanish"
-              : "Portuguese"}
-          </label>
+          <label className="small muted">{targetLabel(targetLang)}</label>
 
           <input
             className="input"
             value={form.target_text}
             onChange={(e) => setForm({ ...form, target_text: e.target.value })}
-            placeholder={
-              targetLang === "tr"
-                ? "e.g., duruşmanın ertelenmesi"
-                : targetLang === "fr"
-                ? "e.g., ajournement"
-                : targetLang === "es"
-                ? "e.g., aplazamiento"
-                : "e.g., adiamento"
-            }
+            placeholder={targetPlaceholder(targetLang)}
           />
 
           <label className="small muted">Notes (optional)</label>
