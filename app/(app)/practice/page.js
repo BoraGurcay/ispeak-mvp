@@ -28,18 +28,19 @@ function stripDiacritics(s) {
 // - brackets removed
 // - lowercased
 // - ALL hyphen variants treated as spaces
-// - apostrophes removed (optional)
-// - extra spaces collapsed
+// - apostrophes removed
+// - keeps digits (important for Roman Arabic like 3 / 7)
+// - collapses spaces
 function normalizeAnswer(s) {
   return stripDiacritics(stripBracketed(s))
     .toLowerCase()
     // normalize “fancy” apostrophes to plain
     .replace(/[’‘´`]/g, "'")
     // normalize all hyphen variants to space
-    .replace(/[‐-–—-]/g, " ")
-    // remove apostrophes entirely (so ma7Dar == ma7dar, isti'naf == istinaf)
+    .replace(/[\u2010-\u2015\u2212\-]/g, " ")
+    // remove apostrophes entirely (isti'naf == istinaf)
     .replace(/'/g, "")
-    // keep a-z, digits, whitespace only
+    // keep a-z, digits, whitespace only (Roman scripts)
     .replace(/[^a-z0-9\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -56,9 +57,8 @@ function normalizeKey(s) {
 }
 
 function termKey(it) {
-  return `${normalizeKey(it.domain)}|${normalizeKey(it.source_text)}|${normalizeKey(
-    it.target_lang
-  )}`;
+  // used only for dedupe within the SAME selected language
+  return `${normalizeKey(it.domain)}|${normalizeKey(it.source_text)}|${normalizeKey(it.target_lang)}`;
 }
 
 /** ------------------ Page ------------------ **/
@@ -95,15 +95,12 @@ export default function PracticePage() {
   const wrongAudioRef = useRef(null);
 
   useEffect(() => {
-    // Create audio objects client-side
     try {
       correctAudioRef.current = new Audio("/sounds/correct.mp3");
       wrongAudioRef.current = new Audio("/sounds/wrong.mp3");
-      // optional: keep low latency
       correctAudioRef.current.preload = "auto";
       wrongAudioRef.current.preload = "auto";
     } catch (e) {
-      // If something blocks Audio, just disable sound quietly
       console.warn("Audio init failed:", e);
       setSoundOn(false);
     }
@@ -116,21 +113,15 @@ export default function PracticePage() {
     try {
       a.currentTime = 0;
       const p = a.play();
-      if (p && typeof p.catch === "function") {
-        p.catch(() => {
-          // Browser autoplay policies may block until user gesture; ignore silently.
-        });
-      }
-    } catch {
-      // ignore
-    }
+      if (p && typeof p.catch === "function") p.catch(() => {});
+    } catch {}
   }
 
   const selectedLangLabel = useMemo(() => {
     return LANGUAGES.find((l) => l.value === lang)?.label || lang;
   }, [lang]);
 
-  // load saved language (same key glossary uses)
+  // load saved language
   useEffect(() => {
     const saved = localStorage.getItem("ispeak_target_lang");
     if (saved && ["tr", "fr", "es", "pt", "hi", "ar"].includes(saved)) {
@@ -148,7 +139,7 @@ export default function PracticePage() {
     setFatalError(null);
 
     try {
-      // 1) Shared pack terms (PUBLIC): load from "terms" (Vercel-safe)
+      // 1) Shared pack terms (PUBLIC): from "terms"
       const sharedRes = await supabase
         .from("terms")
         .select("id,domain,source_text,target_text,source_lang,target_lang,difficulty")
@@ -164,10 +155,7 @@ export default function PracticePage() {
         return;
       }
 
-      const shared = (sharedRes.data || []).map((t) => ({
-        ...t,
-        __kind: "shared",
-      }));
+      const shared = (sharedRes.data || []).map((t) => ({ ...t, __kind: "shared" }));
 
       // 2) Personal terms (only if logged in)
       let personal = [];
@@ -177,9 +165,7 @@ export default function PracticePage() {
       if (user) {
         const personalRes = await supabase
           .from("user_terms")
-          .select(
-            "id,domain,source_text,target_text,source_lang,target_lang,difficulty,created_at"
-          )
+          .select("id,domain,source_text,target_text,source_lang,target_lang,difficulty,created_at")
           .eq("user_id", user.id)
           .eq("source_lang", "en")
           .eq("target_lang", lang)
@@ -187,28 +173,28 @@ export default function PracticePage() {
           .limit(5000);
 
         if (personalRes.error) {
-          // Don’t fail practice if personal terms are blocked—just continue with shared.
-          console.warn(
-            "Personal terms blocked/unavailable, continuing with shared only:",
-            personalRes.error
-          );
+          console.warn("Personal terms unavailable (ignoring):", personalRes.error);
           personal = [];
         } else {
-          personal = (personalRes.data || []).map((t) => ({
-            ...t,
-            __kind: "personal",
-          }));
+          personal = (personalRes.data || []).map((t) => ({ ...t, __kind: "personal" }));
         }
       }
 
-      // Deduplicate: personal overrides shared
+      // Deduplicate: personal overrides shared (within selected language)
       const personalKeys = new Set(personal.map(termKey));
       const sharedFiltered = shared.filter((t) => !personalKeys.has(termKey(t)));
 
       // Merge
-      const merged = [...personal, ...sharedFiltered];
+      let merged = [...personal, ...sharedFiltered];
 
-      // Optional hard mode: difficulty >= 2 if present, else no-op
+      // ✅ HARD SAFETY FILTER:
+      // Guarantee that the pool is ONLY the currently selected language
+      // (prevents Turkish answers leaking into FR/ES/PT/HI/AR)
+      merged = merged.filter(
+        (t) => t && t.source_lang === "en" && t.target_lang === lang && (t.target_text || "").trim().length > 0
+      );
+
+      // Optional hard mode: difficulty >= 2 if present
       let filtered = merged;
       if (mode === "hard") {
         const hard = merged.filter((t) => (t.difficulty ?? 1) >= 2);
@@ -280,19 +266,9 @@ export default function PracticePage() {
     <div style={{ maxWidth: 980, margin: "0 auto", padding: "28px 18px" }}>
       <h1 style={{ fontSize: 44, fontWeight: 800, margin: 0 }}>Practice</h1>
 
-      <div
-        style={{
-          display: "flex",
-          gap: 16,
-          alignItems: "center",
-          marginTop: 18,
-          flexWrap: "wrap",
-        }}
-      >
+      <div style={{ display: "flex", gap: 16, alignItems: "center", marginTop: 18, flexWrap: "wrap" }}>
         <div style={{ minWidth: 240 }}>
-          <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 6 }}>
-            Language
-          </div>
+          <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 6 }}>Language</div>
           <select
             value={lang}
             onChange={(e) => setLang(e.target.value)}
@@ -305,9 +281,7 @@ export default function PracticePage() {
             }}
           >
             {LANGUAGES.map((l) => (
-              <option key={l.value} value={l.value}>
-                {l.label}
-              </option>
+              <option key={l.value} value={l.value}>{l.label}</option>
             ))}
           </select>
         </div>
@@ -376,35 +350,16 @@ export default function PracticePage() {
         </div>
       </div>
 
-      <div
-        style={{
-          marginTop: 22,
-          border: "1px solid rgba(0,0,0,.12)",
-          borderRadius: 18,
-          padding: 22,
-        }}
-      >
+      <div style={{ marginTop: 22, border: "1px solid rgba(0,0,0,.12)", borderRadius: 18, padding: 22 }}>
         <div style={{ opacity: 0.7, fontSize: 14 }}>
           Domain: Court · Difficulty: {term?.difficulty ?? 1}
         </div>
 
-        <div style={{ marginTop: 12, fontSize: 46, fontWeight: 900 }}>
-          {titleText}
-        </div>
+        <div style={{ marginTop: 12, fontSize: 46, fontWeight: 900 }}>{titleText}</div>
 
-        {fatalError && (
-          <div style={{ marginTop: 10, color: "#b00020" }}>{fatalError}</div>
-        )}
+        {fatalError ? <div style={{ marginTop: 10, color: "#b00020" }}>{fatalError}</div> : null}
 
-        <div
-          style={{
-            display: "flex",
-            gap: 12,
-            alignItems: "center",
-            marginTop: 14,
-            flexWrap: "wrap",
-          }}
-        >
+        <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 14, flexWrap: "wrap" }}>
           <input
             ref={inputRef}
             value={answer}
@@ -424,10 +379,7 @@ export default function PracticePage() {
           />
 
           <button
-            onClick={() => {
-              if (!feedback) checkAnswer();
-              else nextTerm();
-            }}
+            onClick={() => { if (!feedback) checkAnswer(); else nextTerm(); }}
             style={{
               padding: "12px 18px",
               borderRadius: 12,
@@ -463,23 +415,19 @@ export default function PracticePage() {
           </button>
         </div>
 
-        {feedback && (
+        {feedback ? (
           <div style={{ marginTop: 14, fontSize: 16 }}>
             {feedback.ok ? (
-              <div style={{ color: "#0a7d28", fontWeight: 700 }}>
-                Correct ✅
-              </div>
+              <div style={{ color: "#0a7d28", fontWeight: 700 }}>Correct ✅</div>
             ) : (
               <div style={{ color: "#b00020", fontWeight: 700 }}>
                 Incorrect ❌{" "}
-                <span style={{ fontWeight: 500, color: "#444" }}>
-                  (expected):{" "}
-                </span>
+                <span style={{ fontWeight: 500, color: "#444" }}>(expected): </span>
                 <span style={{ color: "#111" }}>{feedback.expected}</span>
               </div>
             )}
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

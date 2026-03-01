@@ -70,13 +70,9 @@ export default function Glossary() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Match Practice page key
   const [targetLang, setTargetLang] = useState("tr");
+  const [domainFilter, setDomainFilter] = useState("all");
 
-  // list filter (separate from form domain)
-  const [domainFilter, setDomainFilter] = useState("all"); // all | court | immigration | family
-
-  // status message
   const [status, setStatus] = useState("");
   const statusTimerRef = useRef(null);
 
@@ -88,7 +84,6 @@ export default function Glossary() {
     notes: "",
   });
 
-  // track pack-to-my-term saves to prevent double taps
   const [savingIds, setSavingIds] = useState(() => new Set());
 
   function showStatus(msg) {
@@ -97,12 +92,9 @@ export default function Glossary() {
     statusTimerRef.current = window.setTimeout(() => setStatus(""), 1800);
   }
 
-  // Load saved language
   useEffect(() => {
     const saved = localStorage.getItem("ispeak_target_lang");
-    if (["tr", "fr", "es", "pt", "hi", "ar"].includes(saved)) {
-      setTargetLang(saved);
-    }
+    if (["tr", "fr", "es", "pt", "hi", "ar"].includes(saved)) setTargetLang(saved);
   }, []);
 
   useEffect(() => {
@@ -111,7 +103,6 @@ export default function Glossary() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetLang]);
 
-  // Use the row’s own target_lang for the key (more robust)
   function termKey(it) {
     return `${normalizeKey(it.domain)}|${normalizeKey(it.source_text)}|${normalizeKey(it.target_lang || targetLang)}`;
   }
@@ -138,7 +129,6 @@ export default function Glossary() {
     const { data: userRes } = await supabase.auth.getUser();
     const user = userRes?.user;
 
-    // Shared pack terms
     const sharedRes = await supabase
       .from("terms")
       .select("id,domain,source_text,target_text,source_lang,target_lang")
@@ -151,7 +141,6 @@ export default function Glossary() {
       showStatus(`Shared load error: ${sharedRes.error.message}`);
     }
 
-    // Personal terms
     let personalRes = { data: [], error: null };
     if (user) {
       personalRes = await supabase
@@ -179,7 +168,6 @@ export default function Glossary() {
       __kind: "personal",
     }));
 
-    // Deduplicate: if personal overrides a pack term, hide the pack term
     const personalKeys = new Set(personal.map(termKey));
     const sharedFiltered = shared.filter((t) => !personalKeys.has(termKey(t)));
 
@@ -206,11 +194,8 @@ export default function Glossary() {
     };
 
     let res;
-    if (form.id) {
-      res = await supabase.from("user_terms").update(payload).eq("id", form.id);
-    } else {
-      res = await supabase.from("user_terms").insert(payload);
-    }
+    if (form.id) res = await supabase.from("user_terms").update(payload).eq("id", form.id);
+    else res = await supabase.from("user_terms").insert(payload);
 
     if (res.error) return alert(res.error.message);
 
@@ -241,7 +226,6 @@ export default function Glossary() {
     await load();
   }
 
-  // Copy a shared term into user_terms so it becomes "My term"
   async function addSharedToMyTerms(sharedTerm) {
     if (savingIds.has(sharedTerm.id)) return;
 
@@ -283,32 +267,20 @@ export default function Glossary() {
       <div className="card">
         <div className="h1">Glossary</div>
 
-        {status ? (
-          <div className="small muted" style={{ marginTop: 8 }}>
-            {status}
-          </div>
-        ) : null}
+        {status ? <div className="small muted" style={{ marginTop: 8 }}>{status}</div> : null}
 
-        <label className="small muted" style={{ marginTop: 10 }}>
-          Language
-        </label>
+        <label className="small muted" style={{ marginTop: 10 }}>Language</label>
         <select className="select" value={targetLang} onChange={(e) => setTargetLang(e.target.value)}>
           {languages.map((l) => (
-            <option key={l.value} value={l.value}>
-              {l.label}
-            </option>
+            <option key={l.value} value={l.value}>{l.label}</option>
           ))}
         </select>
 
-        <label className="small muted" style={{ marginTop: 10 }}>
-          Filter list by domain
-        </label>
+        <label className="small muted" style={{ marginTop: 10 }}>Filter list by domain</label>
         <select className="select" value={domainFilter} onChange={(e) => setDomainFilter(e.target.value)}>
           <option value="all">All</option>
           {domains.map((d) => (
-            <option key={d.value} value={d.value}>
-              {d.label}
-            </option>
+            <option key={d.value} value={d.value}>{d.label}</option>
           ))}
         </select>
 
@@ -316,15 +288,9 @@ export default function Glossary() {
 
         <form onSubmit={upsert} className="col">
           <label className="small muted">Domain for new term</label>
-          <select
-            className="select"
-            value={form.domain}
-            onChange={(e) => setForm({ ...form, domain: e.target.value })}
-          >
+          <select className="select" value={form.domain} onChange={(e) => setForm({ ...form, domain: e.target.value })}>
             {domains.map((d) => (
-              <option key={d.value} value={d.value}>
-                {d.label}
-              </option>
+              <option key={d.value} value={d.value}>{d.label}</option>
             ))}
           </select>
 
@@ -352,9 +318,7 @@ export default function Glossary() {
             placeholder="context, caution, dialect notes…"
           />
 
-          <button className="btn btnPrimary" type="submit">
-            {form.id ? "Save" : "Add term"}
-          </button>
+          <button className="btn btnPrimary" type="submit">{form.id ? "Save" : "Add term"}</button>
 
           {form.id ? (
             <button
@@ -385,18 +349,12 @@ export default function Glossary() {
             return (
               <div key={`${it.__kind}-${it.id}`} className="card" style={{ padding: 12 }}>
                 <div className="row" style={{ justifyContent: "space-between" }}>
-                  <span className="badge">
-                    {kindLabel} • {dLabel}
-                  </span>
+                  <span className="badge">{kindLabel} • {dLabel}</span>
 
                   {it.__kind === "personal" ? (
                     <div className="row">
-                      <button className="btn" onClick={() => edit(it)}>
-                        Edit
-                      </button>
-                      <button className="btn btnDanger" onClick={() => del(it.id)}>
-                        Delete
-                      </button>
+                      <button className="btn" onClick={() => edit(it)}>Edit</button>
+                      <button className="btn btnDanger" onClick={() => del(it.id)}>Delete</button>
                     </div>
                   ) : (
                     <button className="btn" disabled={savingIds.has(it.id)} onClick={() => addSharedToMyTerms(it)}>
@@ -408,11 +366,7 @@ export default function Glossary() {
                 <div style={{ marginTop: 8, fontWeight: 700 }}>{it.source_text}</div>
                 <div style={{ marginTop: 4 }}>{it.target_text}</div>
 
-                {it.notes ? (
-                  <div className="small muted" style={{ marginTop: 6 }}>
-                    {it.notes}
-                  </div>
-                ) : null}
+                {it.notes ? <div className="small muted" style={{ marginTop: 6 }}>{it.notes}</div> : null}
               </div>
             );
           })}
