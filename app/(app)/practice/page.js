@@ -61,6 +61,38 @@ function termKey(it) {
   return `${normalizeKey(it.domain)}|${normalizeKey(it.source_text)}|${normalizeKey(it.target_lang)}`;
 }
 
+/**
+* Split a target_text that contains multiple acceptable answers.
+* Examples:
+*  - "mahkeme stenografi / kayıt görevlisi"
+*  - "a|b"
+*  - "a; b"
+*  - "a veya b"
+*/
+function splitExpectedAnswers(expectedRaw) {
+  const raw = (expectedRaw || "").toString().trim();
+  if (!raw) return [];
+
+  // If it doesn't look like it has alternatives, just return the original
+  const looksLikeAlt =
+    raw.includes("/") ||
+    raw.includes("|") ||
+    raw.includes(";") ||
+    /\bveya\b/i.test(raw) ||
+    /\bor\b/i.test(raw);
+
+  if (!looksLikeAlt) return [raw];
+
+  // Split on: / | ; or the word "veya"/"or"
+  const parts = raw
+    .split(/\s*(?:\/|\||;|\bveya\b|\bor\b)\s*/gi)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  // Fallback (shouldn't happen, but safe)
+  return parts.length ? parts : [raw];
+}
+
 /** ------------------ Page ------------------ **/
 
 const LANGUAGES = [
@@ -230,13 +262,22 @@ export default function PracticePage() {
   function checkAnswer() {
     if (!term) return;
 
-    const expected = term.target_text || "";
-    const user = answer || "";
+    const expectedRaw = term.target_text || "";
+    const userRaw = answer || "";
 
-    const expectedNorm = normalizeAnswer(expected);
-    const userNorm = normalizeAnswer(user);
+    const userNorm = normalizeAnswer(userRaw);
 
-    const ok = expectedNorm.length > 0 && userNorm === expectedNorm;
+    // ✅ Accept ANY one of the alternatives if target_text contains multiple options
+    const expectedOptions = splitExpectedAnswers(expectedRaw)
+      .map((x) => normalizeAnswer(x))
+      .filter(Boolean);
+
+    // Also allow a full exact match to the full string (in case user types "a / b")
+    const expectedWholeNorm = normalizeAnswer(expectedRaw);
+
+    const ok =
+      userNorm.length > 0 &&
+      ((expectedOptions.length > 0 && expectedOptions.includes(userNorm)) || userNorm === expectedWholeNorm);
 
     playSound(ok);
 
@@ -245,7 +286,7 @@ export default function PracticePage() {
       setScore((s) => s + 1);
       setStreak((s) => s + 1);
     } else {
-      setFeedback({ ok: false, expected });
+      setFeedback({ ok: false, expected: expectedRaw });
       setStreak(0);
     }
   }
@@ -258,9 +299,7 @@ export default function PracticePage() {
     }
   }
 
-  const titleText = loading
-    ? "Loading..."
-    : term?.source_text || (fatalError ? "Error" : "No terms found");
+  const titleText = loading ? "Loading..." : term?.source_text || (fatalError ? "Error" : "No terms found");
 
   return (
     <div style={{ maxWidth: 980, margin: "0 auto", padding: "28px 18px" }}>
@@ -281,7 +320,9 @@ export default function PracticePage() {
             }}
           >
             {LANGUAGES.map((l) => (
-              <option key={l.value} value={l.value}>{l.label}</option>
+              <option key={l.value} value={l.value}>
+                {l.label}
+              </option>
             ))}
           </select>
         </div>
@@ -351,9 +392,7 @@ export default function PracticePage() {
       </div>
 
       <div style={{ marginTop: 22, border: "1px solid rgba(0,0,0,.12)", borderRadius: 18, padding: 22 }}>
-        <div style={{ opacity: 0.7, fontSize: 14 }}>
-          Domain: Court · Difficulty: {term?.difficulty ?? 1}
-        </div>
+        <div style={{ opacity: 0.7, fontSize: 14 }}>Domain: Court · Difficulty: {term?.difficulty ?? 1}</div>
 
         <div style={{ marginTop: 12, fontSize: 46, fontWeight: 900 }}>{titleText}</div>
 
@@ -379,7 +418,10 @@ export default function PracticePage() {
           />
 
           <button
-            onClick={() => { if (!feedback) checkAnswer(); else nextTerm(); }}
+            onClick={() => {
+              if (!feedback) checkAnswer();
+              else nextTerm();
+            }}
             style={{
               padding: "12px 18px",
               borderRadius: 12,
