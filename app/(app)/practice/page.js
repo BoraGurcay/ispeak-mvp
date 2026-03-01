@@ -89,7 +89,6 @@ function splitExpectedAnswers(expectedRaw) {
     .map((s) => s.trim())
     .filter(Boolean);
 
-  // Fallback (shouldn't happen, but safe)
   return parts.length ? parts : [raw];
 }
 
@@ -114,7 +113,11 @@ export default function PracticePage() {
   const [term, setTerm] = useState(null);
 
   const [answer, setAnswer] = useState("");
-  const [feedback, setFeedback] = useState(null); // { ok: boolean, expected?: string }
+
+  // feedback now includes:
+  // { ok: boolean, expected?: string, accepted?: string[], matched?: string|null }
+  const [feedback, setFeedback] = useState(null);
+
   const [score, setScore] = useState(0);
   const [streak, setStreak] = useState(0);
 
@@ -220,8 +223,6 @@ export default function PracticePage() {
       let merged = [...personal, ...sharedFiltered];
 
       // ✅ HARD SAFETY FILTER:
-      // Guarantee that the pool is ONLY the currently selected language
-      // (prevents Turkish answers leaking into FR/ES/PT/HI/AR)
       merged = merged.filter(
         (t) => t && t.source_lang === "en" && t.target_lang === lang && (t.target_text || "").trim().length > 0
       );
@@ -267,26 +268,33 @@ export default function PracticePage() {
 
     const userNorm = normalizeAnswer(userRaw);
 
-    // ✅ Accept ANY one of the alternatives if target_text contains multiple options
-    const expectedOptions = splitExpectedAnswers(expectedRaw)
-      .map((x) => normalizeAnswer(x))
-      .filter(Boolean);
+    // Accepted options (raw + normalized)
+    const acceptedRaw = splitExpectedAnswers(expectedRaw);
+    const acceptedNorm = acceptedRaw.map((x) => normalizeAnswer(x)).filter(Boolean);
 
-    // Also allow a full exact match to the full string (in case user types "a / b")
+    // Also allow matching the whole raw string (if user types "a / b")
     const expectedWholeNorm = normalizeAnswer(expectedRaw);
 
     const ok =
       userNorm.length > 0 &&
-      ((expectedOptions.length > 0 && expectedOptions.includes(userNorm)) || userNorm === expectedWholeNorm);
+      ((acceptedNorm.length > 0 && acceptedNorm.includes(userNorm)) || userNorm === expectedWholeNorm);
+
+    // Find which alternative matched (for highlighting)
+    let matched = null;
+    if (ok) {
+      const idx = acceptedNorm.indexOf(userNorm);
+      if (idx >= 0) matched = acceptedRaw[idx] || null;
+      else matched = expectedRaw || null;
+    }
 
     playSound(ok);
 
     if (ok) {
-      setFeedback({ ok: true });
+      setFeedback({ ok: true, accepted: acceptedRaw, matched });
       setScore((s) => s + 1);
       setStreak((s) => s + 1);
     } else {
-      setFeedback({ ok: false, expected: expectedRaw });
+      setFeedback({ ok: false, expected: expectedRaw, accepted: acceptedRaw, matched: null });
       setStreak(0);
     }
   }
@@ -468,6 +476,24 @@ export default function PracticePage() {
                 <span style={{ color: "#111" }}>{feedback.expected}</span>
               </div>
             )}
+
+            {feedback.accepted && feedback.accepted.length > 0 ? (
+              <div style={{ marginTop: 10, fontSize: 14, opacity: 0.85 }}>
+                Accepted answers:{" "}
+                {feedback.accepted.map((a, i) => {
+                  const isMatch =
+                    feedback.ok &&
+                    feedback.matched &&
+                    normalizeAnswer(a) === normalizeAnswer(feedback.matched);
+                  return (
+                    <span key={i} style={{ fontWeight: isMatch ? 800 : 500 }}>
+                      {a}
+                      {i < feedback.accepted.length - 1 ? " · " : ""}
+                    </span>
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>
