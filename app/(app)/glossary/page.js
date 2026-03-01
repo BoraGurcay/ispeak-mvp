@@ -132,7 +132,9 @@ export default function Glossary() {
   // Key used to detect duplicates within the SAME language
   // We normalize source_text so "Election" and "election" collapse.
   function termKey(it) {
-    return `${normalizeKey(it.domain)}|${normalizeKey(it.source_text)}|${normalizeKey(it.target_lang || targetLang)}|${it.__kind || ""}`;
+    return `${normalizeKey(it.domain)}|${normalizeKey(it.source_text)}|${normalizeKey(
+      it.target_lang || targetLang
+    )}|${it.__kind || ""}`;
   }
 
   // Dedupe list by key, and merge target_text if duplicates exist
@@ -235,12 +237,14 @@ export default function Glossary() {
     // If user has a personal term for the same normalized English/domain/lang,
     // we hide the shared one (personal wins).
     const personalKeyNoKind = (it) =>
-      `${normalizeKey(it.domain)}|${normalizeKey(it.source_text)}|${normalizeKey(it.target_lang || targetLang)}`;
+      `${normalizeKey(it.domain)}|${normalizeKey(it.source_text)}|${normalizeKey(
+        it.target_lang || targetLang
+      )}`;
 
     const personalKeys = new Set(personal.map(personalKeyNoKind));
     const sharedFiltered = shared.filter((t) => !personalKeys.has(personalKeyNoKind(t)));
 
-    // ✅ New: de-dupe within each list (this removes true duplicates like your screenshot)
+    // De-dupe within each list
     const personalDeduped = dedupeList(personal);
     const sharedDeduped = dedupeList(sharedFiltered);
 
@@ -311,7 +315,8 @@ export default function Glossary() {
         it.__kind === "personal" &&
         normalizeKey(it.domain) === normalizeKey(sharedTerm.domain) &&
         normalizeKey(it.source_text) === normalizeKey(sharedTerm.source_text) &&
-        normalizeKey(it.target_lang || targetLang) === normalizeKey(sharedTerm.target_lang || targetLang)
+        normalizeKey(it.target_lang || targetLang) ===
+          normalizeKey(sharedTerm.target_lang || targetLang)
     );
     if (alreadyPersonal) return showStatus("Already in My terms");
 

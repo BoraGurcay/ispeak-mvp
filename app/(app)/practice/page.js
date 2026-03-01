@@ -92,7 +92,7 @@ function splitExpectedAnswers(expectedRaw) {
   return parts.length ? parts : [raw];
 }
 
-/** ------------------ Page ------------------ **/
+// ------------------ Config ------------------
 
 const LANGUAGES = [
   { value: "tr", label: "Turkish (TR)" },
@@ -103,18 +103,31 @@ const LANGUAGES = [
   { value: "ar", label: "Arabic (AR)" },
 ];
 
+const DOMAINS = [
+  { value: "all", label: "All" },
+  { value: "court", label: "Court" },
+  { value: "immigration", label: "Immigration" },
+  { value: "family", label: "Family" },
+];
+
+function domainLabel(value) {
+  const d = DOMAINS.find((x) => x.value === value);
+  return d?.label ?? "Court";
+}
+
 export default function PracticePage() {
   const inputRef = useRef(null);
 
   const [lang, setLang] = useState("tr");
   const [mode, setMode] = useState("normal"); // "normal" | "hard"
+  const [domain, setDomain] = useState("all"); // all | court | immigration | family
 
   const [pool, setPool] = useState([]);
   const [term, setTerm] = useState(null);
 
   const [answer, setAnswer] = useState("");
 
-  // feedback now includes:
+  // feedback includes:
   // { ok: boolean, expected?: string, accepted?: string[], matched?: string|null }
   const [feedback, setFeedback] = useState(null);
 
@@ -175,12 +188,18 @@ export default function PracticePage() {
 
     try {
       // 1) Shared pack terms (PUBLIC): from "terms"
-      const sharedRes = await supabase
+      let sharedQuery = supabase
         .from("terms")
         .select("id,domain,source_text,target_text,source_lang,target_lang,difficulty")
         .eq("source_lang", "en")
         .eq("target_lang", lang)
         .limit(5000);
+
+      if (domain !== "all") {
+        sharedQuery = sharedQuery.eq("domain", domain);
+      }
+
+      const sharedRes = await sharedQuery;
 
       if (sharedRes.error) {
         console.error("Shared terms load failed:", sharedRes.error);
@@ -198,7 +217,7 @@ export default function PracticePage() {
       const user = userRes?.user;
 
       if (user) {
-        const personalRes = await supabase
+        let personalQuery = supabase
           .from("user_terms")
           .select("id,domain,source_text,target_text,source_lang,target_lang,difficulty,created_at")
           .eq("user_id", user.id)
@@ -206,6 +225,12 @@ export default function PracticePage() {
           .eq("target_lang", lang)
           .order("created_at", { ascending: false })
           .limit(5000);
+
+        if (domain !== "all") {
+          personalQuery = personalQuery.eq("domain", domain);
+        }
+
+        const personalRes = await personalQuery;
 
         if (personalRes.error) {
           console.warn("Personal terms unavailable (ignoring):", personalRes.error);
@@ -222,9 +247,13 @@ export default function PracticePage() {
       // Merge
       let merged = [...personal, ...sharedFiltered];
 
-      // ✅ HARD SAFETY FILTER:
+      // HARD SAFETY FILTER
       merged = merged.filter(
-        (t) => t && t.source_lang === "en" && t.target_lang === lang && (t.target_text || "").trim().length > 0
+        (t) =>
+          t &&
+          t.source_lang === "en" &&
+          t.target_lang === lang &&
+          (t.target_text || "").trim().length > 0
       );
 
       // Optional hard mode: difficulty >= 2 if present
@@ -250,7 +279,7 @@ export default function PracticePage() {
   useEffect(() => {
     loadPool();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lang, mode]);
+  }, [lang, mode, domain]);
 
   function nextTerm() {
     const next = pickRandom(pool);
@@ -268,7 +297,6 @@ export default function PracticePage() {
 
     const userNorm = normalizeAnswer(userRaw);
 
-    // Accepted options (raw + normalized)
     const acceptedRaw = splitExpectedAnswers(expectedRaw);
     const acceptedNorm = acceptedRaw.map((x) => normalizeAnswer(x)).filter(Boolean);
 
@@ -307,7 +335,11 @@ export default function PracticePage() {
     }
   }
 
-  const titleText = loading ? "Loading..." : term?.source_text || (fatalError ? "Error" : "No terms found");
+  const titleText = loading
+    ? "Loading..."
+    : term?.source_text || (fatalError ? "Error" : "No terms found");
+
+  const shownDomain = term?.domain ? domainLabel(term.domain) : domainLabel(domain === "all" ? "court" : domain);
 
   return (
     <div style={{ maxWidth: 980, margin: "0 auto", padding: "28px 18px" }}>
@@ -330,6 +362,27 @@ export default function PracticePage() {
             {LANGUAGES.map((l) => (
               <option key={l.value} value={l.value}>
                 {l.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ minWidth: 240 }}>
+          <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 6 }}>Domain</div>
+          <select
+            value={domain}
+            onChange={(e) => setDomain(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: "1px solid rgba(0,0,0,.15)",
+              fontSize: 16,
+            }}
+          >
+            {DOMAINS.map((d) => (
+              <option key={d.value} value={d.value}>
+                {d.label}
               </option>
             ))}
           </select>
@@ -400,7 +453,9 @@ export default function PracticePage() {
       </div>
 
       <div style={{ marginTop: 22, border: "1px solid rgba(0,0,0,.12)", borderRadius: 18, padding: 22 }}>
-        <div style={{ opacity: 0.7, fontSize: 14 }}>Domain: Court · Difficulty: {term?.difficulty ?? 1}</div>
+        <div style={{ opacity: 0.7, fontSize: 14 }}>
+          Domain: {shownDomain} · Difficulty: {term?.difficulty ?? 1}
+        </div>
 
         <div style={{ marginTop: 12, fontSize: 46, fontWeight: 900 }}>{titleText}</div>
 
