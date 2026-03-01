@@ -56,7 +56,9 @@ function normalizeKey(s) {
 }
 
 function termKey(it) {
-  return `${normalizeKey(it.domain)}|${normalizeKey(it.source_text)}|${normalizeKey(it.target_lang)}`;
+  return `${normalizeKey(it.domain)}|${normalizeKey(it.source_text)}|${normalizeKey(
+    it.target_lang
+  )}`;
 }
 
 /** ------------------ Page ------------------ **/
@@ -87,6 +89,43 @@ export default function PracticePage() {
   const [loading, setLoading] = useState(false);
   const [fatalError, setFatalError] = useState(null);
 
+  // ---------- Sound ----------
+  const [soundOn, setSoundOn] = useState(true);
+  const correctAudioRef = useRef(null);
+  const wrongAudioRef = useRef(null);
+
+  useEffect(() => {
+    // Create audio objects client-side
+    try {
+      correctAudioRef.current = new Audio("/sounds/correct.mp3");
+      wrongAudioRef.current = new Audio("/sounds/wrong.mp3");
+      // optional: keep low latency
+      correctAudioRef.current.preload = "auto";
+      wrongAudioRef.current.preload = "auto";
+    } catch (e) {
+      // If something blocks Audio, just disable sound quietly
+      console.warn("Audio init failed:", e);
+      setSoundOn(false);
+    }
+  }, []);
+
+  function playSound(ok) {
+    if (!soundOn) return;
+    const a = ok ? correctAudioRef.current : wrongAudioRef.current;
+    if (!a) return;
+    try {
+      a.currentTime = 0;
+      const p = a.play();
+      if (p && typeof p.catch === "function") {
+        p.catch(() => {
+          // Browser autoplay policies may block until user gesture; ignore silently.
+        });
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   const selectedLangLabel = useMemo(() => {
     return LANGUAGES.find((l) => l.value === lang)?.label || lang;
   }, [lang]);
@@ -109,7 +148,7 @@ export default function PracticePage() {
     setFatalError(null);
 
     try {
-      // 1) Shared pack terms (PUBLIC): load from "terms" (this is the key fix for Vercel)
+      // 1) Shared pack terms (PUBLIC): load from "terms" (Vercel-safe)
       const sharedRes = await supabase
         .from("terms")
         .select("id,domain,source_text,target_text,source_lang,target_lang,difficulty")
@@ -138,7 +177,9 @@ export default function PracticePage() {
       if (user) {
         const personalRes = await supabase
           .from("user_terms")
-          .select("id,domain,source_text,target_text,source_lang,target_lang,difficulty,created_at")
+          .select(
+            "id,domain,source_text,target_text,source_lang,target_lang,difficulty,created_at"
+          )
           .eq("user_id", user.id)
           .eq("source_lang", "en")
           .eq("target_lang", lang)
@@ -147,7 +188,10 @@ export default function PracticePage() {
 
         if (personalRes.error) {
           // Don’t fail practice if personal terms are blocked—just continue with shared.
-          console.warn("Personal terms blocked/unavailable, continuing with shared only:", personalRes.error);
+          console.warn(
+            "Personal terms blocked/unavailable, continuing with shared only:",
+            personalRes.error
+          );
           personal = [];
         } else {
           personal = (personalRes.data || []).map((t) => ({
@@ -164,7 +208,7 @@ export default function PracticePage() {
       // Merge
       const merged = [...personal, ...sharedFiltered];
 
-      // Optional hard mode: keep it simple (difficulty >= 2) if present, otherwise no-op
+      // Optional hard mode: difficulty >= 2 if present, else no-op
       let filtered = merged;
       if (mode === "hard") {
         const hard = merged.filter((t) => (t.difficulty ?? 1) >= 2);
@@ -208,6 +252,8 @@ export default function PracticePage() {
 
     const ok = expectedNorm.length > 0 && userNorm === expectedNorm;
 
+    playSound(ok);
+
     if (ok) {
       setFeedback({ ok: true });
       setScore((s) => s + 1);
@@ -244,7 +290,9 @@ export default function PracticePage() {
         }}
       >
         <div style={{ minWidth: 240 }}>
-          <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 6 }}>Language</div>
+          <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 6 }}>
+            Language
+          </div>
           <select
             value={lang}
             onChange={(e) => setLang(e.target.value)}
@@ -296,6 +344,28 @@ export default function PracticePage() {
           >
             Hard Words
           </button>
+
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "10px 12px",
+              borderRadius: 999,
+              border: "1px solid rgba(0,0,0,.15)",
+              cursor: "pointer",
+              userSelect: "none",
+            }}
+            title="Toggle sounds"
+          >
+            <input
+              type="checkbox"
+              checked={soundOn}
+              onChange={(e) => setSoundOn(e.target.checked)}
+              style={{ transform: "scale(1.1)" }}
+            />
+            Sound
+          </label>
         </div>
 
         <div style={{ marginLeft: "auto", textAlign: "right" }}>
@@ -318,9 +388,13 @@ export default function PracticePage() {
           Domain: Court · Difficulty: {term?.difficulty ?? 1}
         </div>
 
-        <div style={{ marginTop: 12, fontSize: 46, fontWeight: 900 }}>{titleText}</div>
+        <div style={{ marginTop: 12, fontSize: 46, fontWeight: 900 }}>
+          {titleText}
+        </div>
 
-        {fatalError && <div style={{ marginTop: 10, color: "#b00020" }}>{fatalError}</div>}
+        {fatalError && (
+          <div style={{ marginTop: 10, color: "#b00020" }}>{fatalError}</div>
+        )}
 
         <div
           style={{
@@ -392,11 +466,15 @@ export default function PracticePage() {
         {feedback && (
           <div style={{ marginTop: 14, fontSize: 16 }}>
             {feedback.ok ? (
-              <div style={{ color: "#0a7d28", fontWeight: 700 }}>Correct ✅</div>
+              <div style={{ color: "#0a7d28", fontWeight: 700 }}>
+                Correct ✅
+              </div>
             ) : (
               <div style={{ color: "#b00020", fontWeight: 700 }}>
                 Incorrect ❌{" "}
-                <span style={{ fontWeight: 500, color: "#444" }}>(expected): </span>
+                <span style={{ fontWeight: 500, color: "#444" }}>
+                  (expected):{" "}
+                </span>
                 <span style={{ color: "#111" }}>{feedback.expected}</span>
               </div>
             )}
