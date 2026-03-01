@@ -65,6 +65,32 @@ function targetPlaceholder(targetLang) {
   }
 }
 
+// Split a target_text that may include multiple answers.
+// Keep it conservative: only split on obvious separators.
+function splitTargets(raw) {
+  const s = (raw || "").toString().trim();
+  if (!s) return [];
+  return s
+    .split(/\s*(?:\/|\||;|\n)\s*/g)
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+function dedupeAndMergeTargets(a, b) {
+  const parts = [...splitTargets(a), ...splitTargets(b)];
+  const seen = new Set();
+  const out = [];
+
+  for (const p of parts) {
+    const key = normalizeKey(p);
+    if (!key) continue;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(p);
+  }
+  return out.join(" / ");
+}
+
 export default function Glossary() {
   const [q, setQ] = useState("");
   const [items, setItems] = useState([]);
@@ -103,8 +129,46 @@ export default function Glossary() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetLang]);
 
+  // Key used to detect duplicates within the SAME language
+  // We normalize source_text so "Election" and "election" collapse.
   function termKey(it) {
-    return `${normalizeKey(it.domain)}|${normalizeKey(it.source_text)}|${normalizeKey(it.target_lang || targetLang)}`;
+    return `${normalizeKey(it.domain)}|${normalizeKey(it.source_text)}|${normalizeKey(it.target_lang || targetLang)}|${it.__kind || ""}`;
+  }
+
+  // Dedupe list by key, and merge target_text if duplicates exist
+  function dedupeList(list) {
+    const map = new Map();
+
+    for (const it of list) {
+      const key = termKey(it);
+      const prev = map.get(key);
+
+      if (!prev) {
+        map.set(key, { ...it });
+        continue;
+      }
+
+      // Merge target_text when duplicates exist (keeps all valid answers)
+      const mergedTarget = dedupeAndMergeTargets(prev.target_text, it.target_text);
+
+      // Prefer a nicer looking source_text (e.g., keep Title Case if present)
+      const prevSrc = (prev.source_text || "").toString().trim();
+      const nextSrc = (it.source_text || "").toString().trim();
+      const betterSource =
+        prevSrc && nextSrc
+          ? prevSrc.length >= nextSrc.length
+            ? prevSrc
+            : nextSrc
+          : prevSrc || nextSrc;
+
+      map.set(key, {
+        ...prev,
+        source_text: betterSource,
+        target_text: mergedTarget,
+      });
+    }
+
+    return Array.from(map.values());
   }
 
   const filtered = useMemo(() => {
@@ -168,10 +232,19 @@ export default function Glossary() {
       __kind: "personal",
     }));
 
-    const personalKeys = new Set(personal.map(termKey));
-    const sharedFiltered = shared.filter((t) => !personalKeys.has(termKey(t)));
+    // If user has a personal term for the same normalized English/domain/lang,
+    // we hide the shared one (personal wins).
+    const personalKeyNoKind = (it) =>
+      `${normalizeKey(it.domain)}|${normalizeKey(it.source_text)}|${normalizeKey(it.target_lang || targetLang)}`;
 
-    setItems([...personal, ...sharedFiltered]);
+    const personalKeys = new Set(personal.map(personalKeyNoKind));
+    const sharedFiltered = shared.filter((t) => !personalKeys.has(personalKeyNoKind(t)));
+
+    // ✅ New: de-dupe within each list (this removes true duplicates like your screenshot)
+    const personalDeduped = dedupeList(personal);
+    const sharedDeduped = dedupeList(sharedFiltered);
+
+    setItems([...personalDeduped, ...sharedDeduped]);
     setLoading(false);
   }
 
@@ -233,7 +306,13 @@ export default function Glossary() {
     const user = userRes?.user;
     if (!user) return alert("Please sign in to save personal terms.");
 
-    const alreadyPersonal = items.some((it) => it.__kind === "personal" && termKey(it) === termKey(sharedTerm));
+    const alreadyPersonal = items.some(
+      (it) =>
+        it.__kind === "personal" &&
+        normalizeKey(it.domain) === normalizeKey(sharedTerm.domain) &&
+        normalizeKey(it.source_text) === normalizeKey(sharedTerm.source_text) &&
+        normalizeKey(it.target_lang || targetLang) === normalizeKey(sharedTerm.target_lang || targetLang)
+    );
     if (alreadyPersonal) return showStatus("Already in My terms");
 
     const next = new Set(savingIds);
@@ -267,20 +346,32 @@ export default function Glossary() {
       <div className="card">
         <div className="h1">Glossary</div>
 
-        {status ? <div className="small muted" style={{ marginTop: 8 }}>{status}</div> : null}
+        {status ? (
+          <div className="small muted" style={{ marginTop: 8 }}>
+            {status}
+          </div>
+        ) : null}
 
-        <label className="small muted" style={{ marginTop: 10 }}>Language</label>
+        <label className="small muted" style={{ marginTop: 10 }}>
+          Language
+        </label>
         <select className="select" value={targetLang} onChange={(e) => setTargetLang(e.target.value)}>
           {languages.map((l) => (
-            <option key={l.value} value={l.value}>{l.label}</option>
+            <option key={l.value} value={l.value}>
+              {l.label}
+            </option>
           ))}
         </select>
 
-        <label className="small muted" style={{ marginTop: 10 }}>Filter list by domain</label>
+        <label className="small muted" style={{ marginTop: 10 }}>
+          Filter list by domain
+        </label>
         <select className="select" value={domainFilter} onChange={(e) => setDomainFilter(e.target.value)}>
           <option value="all">All</option>
           {domains.map((d) => (
-            <option key={d.value} value={d.value}>{d.label}</option>
+            <option key={d.value} value={d.value}>
+              {d.label}
+            </option>
           ))}
         </select>
 
@@ -290,7 +381,9 @@ export default function Glossary() {
           <label className="small muted">Domain for new term</label>
           <select className="select" value={form.domain} onChange={(e) => setForm({ ...form, domain: e.target.value })}>
             {domains.map((d) => (
-              <option key={d.value} value={d.value}>{d.label}</option>
+              <option key={d.value} value={d.value}>
+                {d.label}
+              </option>
             ))}
           </select>
 
@@ -318,7 +411,9 @@ export default function Glossary() {
             placeholder="context, caution, dialect notes…"
           />
 
-          <button className="btn btnPrimary" type="submit">{form.id ? "Save" : "Add term"}</button>
+          <button className="btn btnPrimary" type="submit">
+            {form.id ? "Save" : "Add term"}
+          </button>
 
           {form.id ? (
             <button
@@ -349,12 +444,18 @@ export default function Glossary() {
             return (
               <div key={`${it.__kind}-${it.id}`} className="card" style={{ padding: 12 }}>
                 <div className="row" style={{ justifyContent: "space-between" }}>
-                  <span className="badge">{kindLabel} • {dLabel}</span>
+                  <span className="badge">
+                    {kindLabel} • {dLabel}
+                  </span>
 
                   {it.__kind === "personal" ? (
                     <div className="row">
-                      <button className="btn" onClick={() => edit(it)}>Edit</button>
-                      <button className="btn btnDanger" onClick={() => del(it.id)}>Delete</button>
+                      <button className="btn" onClick={() => edit(it)}>
+                        Edit
+                      </button>
+                      <button className="btn btnDanger" onClick={() => del(it.id)}>
+                        Delete
+                      </button>
                     </div>
                   ) : (
                     <button className="btn" disabled={savingIds.has(it.id)} onClick={() => addSharedToMyTerms(it)}>
