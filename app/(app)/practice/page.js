@@ -1,16 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
-
-// --------- Supabase (client) ----------
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-const supabase =
-  supabaseUrl && supabaseAnonKey
-    ? createClient(supabaseUrl, supabaseAnonKey)
-    : null;
+import { supabase } from "../../../lib/supabaseClient";
 
 // ------------- Helpers ---------------
 
@@ -36,14 +27,19 @@ function stripDiacritics(s) {
 // - accents removed
 // - brackets removed
 // - lowercased
-// - hyphens treated as spaces
+// - ALL hyphen variants treated as spaces
 // - apostrophes removed (optional)
+// - extra spaces collapsed
 function normalizeAnswer(s) {
   return stripDiacritics(stripBracketed(s))
     .toLowerCase()
-    .replace(/[’`]/g, "'")
-    .replace(/-/g, " ")
+    // normalize “fancy” apostrophes to plain
+    .replace(/[’‘´`]/g, "'")
+    // normalize all hyphen variants to space
+    .replace(/[‐-–—-]/g, " ")
+    // remove apostrophes entirely (so ma7Dar == ma7dar, isti'naf == istinaf)
     .replace(/'/g, "")
+    // keep a-z, digits, whitespace only
     .replace(/[^a-z0-9\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -53,6 +49,14 @@ function pickRandom(arr) {
   if (!arr || arr.length === 0) return null;
   const idx = Math.floor(Math.random() * arr.length);
   return arr[idx];
+}
+
+function normalizeKey(s) {
+  return (s || "").toString().trim().toLowerCase();
+}
+
+function termKey(it) {
+  return `${normalizeKey(it.domain)}|${normalizeKey(it.source_text)}|${normalizeKey(it.target_lang)}`;
 }
 
 /** ------------------ Page ------------------ **/
@@ -87,26 +91,31 @@ export default function PracticePage() {
     return LANGUAGES.find((l) => l.value === lang)?.label || lang;
   }, [lang]);
 
+  // load saved language (same key glossary uses)
+  useEffect(() => {
+    const saved = localStorage.getItem("ispeak_target_lang");
+    if (saved && ["tr", "fr", "es", "pt", "hi", "ar"].includes(saved)) {
+      setLang(saved);
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("ispeak_target_lang", lang);
+  }, [lang]);
+
   async function loadPool() {
     setLoading(true);
     setFeedback(null);
     setFatalError(null);
 
     try {
-      if (!supabase) {
-        setFatalError("Supabase is not configured (missing env vars).");
-        setPool([]);
-        setTerm(null);
-        return;
-      }
-
-      // 1) Always load SHARED terms (these should be readable publicly)
+      // 1) Shared pack terms (PUBLIC): load from "terms" (this is the key fix for Vercel)
       const sharedRes = await supabase
-        .from("user_terms")
-        .select("*")
-        .eq("is_shared", true)
+        .from("terms")
+        .select("id,domain,source_text,target_text,source_lang,target_lang,difficulty")
         .eq("source_lang", "en")
-        .eq("target_lang", lang);
+        .eq("target_lang", lang)
+        .limit(5000);
 
       if (sharedRes.error) {
         console.error("Shared terms load failed:", sharedRes.error);
@@ -116,31 +125,51 @@ export default function PracticePage() {
         return;
       }
 
-      const shared = sharedRes.data || [];
+      const shared = (sharedRes.data || []).map((t) => ({
+        ...t,
+        __kind: "shared",
+      }));
 
-      // 2) Try to load PERSONAL terms, but DO NOT fail if blocked by RLS
+      // 2) Personal terms (only if logged in)
       let personal = [];
-      const personalRes = await supabase
-        .from("user_terms")
-        .select("*")
-        .eq("is_shared", false)
-        .eq("source_lang", "en")
-        .eq("target_lang", lang);
+      const { data: userRes } = await supabase.auth.getUser();
+      const user = userRes?.user;
 
-      if (personalRes.error) {
-        // This is the key fix:
-        // On Vercel, personal terms may be blocked (no auth). We ignore and continue.
-        console.warn("Personal terms blocked/unavailable, continuing with shared only:", personalRes.error);
-        personal = [];
-      } else {
-        personal = personalRes.data || [];
+      if (user) {
+        const personalRes = await supabase
+          .from("user_terms")
+          .select("id,domain,source_text,target_text,source_lang,target_lang,difficulty,created_at")
+          .eq("user_id", user.id)
+          .eq("source_lang", "en")
+          .eq("target_lang", lang)
+          .order("created_at", { ascending: false })
+          .limit(5000);
+
+        if (personalRes.error) {
+          // Don’t fail practice if personal terms are blocked—just continue with shared.
+          console.warn("Personal terms blocked/unavailable, continuing with shared only:", personalRes.error);
+          personal = [];
+        } else {
+          personal = (personalRes.data || []).map((t) => ({
+            ...t,
+            __kind: "personal",
+          }));
+        }
       }
 
-      const merged = [...shared, ...personal];
+      // Deduplicate: personal overrides shared
+      const personalKeys = new Set(personal.map(termKey));
+      const sharedFiltered = shared.filter((t) => !personalKeys.has(termKey(t)));
 
-      // Optional: "hard" mode placeholder (kept same behavior)
+      // Merge
+      const merged = [...personal, ...sharedFiltered];
+
+      // Optional hard mode: keep it simple (difficulty >= 2) if present, otherwise no-op
       let filtered = merged;
-      if (mode === "hard") filtered = merged;
+      if (mode === "hard") {
+        const hard = merged.filter((t) => (t.difficulty ?? 1) >= 2);
+        filtered = hard.length ? hard : merged;
+      }
 
       setPool(filtered);
 
@@ -197,8 +226,9 @@ export default function PracticePage() {
     }
   }
 
-  const titleText =
-    loading ? "Loading..." : term?.source_text || (fatalError ? "Error" : "No terms found");
+  const titleText = loading
+    ? "Loading..."
+    : term?.source_text || (fatalError ? "Error" : "No terms found");
 
   return (
     <div style={{ maxWidth: 980, margin: "0 auto", padding: "28px 18px" }}>
@@ -214,9 +244,7 @@ export default function PracticePage() {
         }}
       >
         <div style={{ minWidth: 240 }}>
-          <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 6 }}>
-            Language
-          </div>
+          <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 6 }}>Language</div>
           <select
             value={lang}
             onChange={(e) => setLang(e.target.value)}
@@ -290,15 +318,9 @@ export default function PracticePage() {
           Domain: Court · Difficulty: {term?.difficulty ?? 1}
         </div>
 
-        <div style={{ marginTop: 12, fontSize: 46, fontWeight: 900 }}>
-          {titleText}
-        </div>
+        <div style={{ marginTop: 12, fontSize: 46, fontWeight: 900 }}>{titleText}</div>
 
-        {fatalError && (
-          <div style={{ marginTop: 10, color: "#b00020" }}>
-            {fatalError}
-          </div>
-        )}
+        {fatalError && <div style={{ marginTop: 10, color: "#b00020" }}>{fatalError}</div>}
 
         <div
           style={{
@@ -370,15 +392,11 @@ export default function PracticePage() {
         {feedback && (
           <div style={{ marginTop: 14, fontSize: 16 }}>
             {feedback.ok ? (
-              <div style={{ color: "#0a7d28", fontWeight: 700 }}>
-                Correct ✅
-              </div>
+              <div style={{ color: "#0a7d28", fontWeight: 700 }}>Correct ✅</div>
             ) : (
               <div style={{ color: "#b00020", fontWeight: 700 }}>
                 Incorrect ❌{" "}
-                <span style={{ fontWeight: 500, color: "#444" }}>
-                  (expected):{" "}
-                </span>
+                <span style={{ fontWeight: 500, color: "#444" }}>(expected): </span>
                 <span style={{ color: "#111" }}>{feedback.expected}</span>
               </div>
             )}

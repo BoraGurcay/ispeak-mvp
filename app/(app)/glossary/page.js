@@ -15,7 +15,7 @@ const languages = [
   { value: "es", label: "Spanish (ES)" },
   { value: "pt", label: "Portuguese (PT)" },
   { value: "hi", label: "Hindi (HI)" },
-  { value: "ar", label: "Roman Arabic (AR)" },
+  { value: "ar", label: "Arabic (AR)" },
 ];
 
 function domainLabel(value) {
@@ -38,9 +38,9 @@ function targetLabel(targetLang) {
     case "pt":
       return "Portuguese";
     case "hi":
-      return "Hindi (Roman)";
+      return "Hindi";
     case "ar":
-      return "Roman Arabic";
+      return "Arabic";
     default:
       return "Translation";
   }
@@ -113,9 +113,7 @@ export default function Glossary() {
 
   // Use the row’s own target_lang for the key (more robust)
   function termKey(it) {
-    return `${normalizeKey(it.domain)}|${normalizeKey(it.source_text)}|${normalizeKey(
-      it.target_lang || targetLang
-    )}`;
+    return `${normalizeKey(it.domain)}|${normalizeKey(it.source_text)}|${normalizeKey(it.target_lang || targetLang)}`;
   }
 
   const filtered = useMemo(() => {
@@ -251,9 +249,7 @@ export default function Glossary() {
     const user = userRes?.user;
     if (!user) return alert("Please sign in to save personal terms.");
 
-    const alreadyPersonal = items.some(
-      (it) => it.__kind === "personal" && termKey(it) === termKey(sharedTerm)
-    );
+    const alreadyPersonal = items.some((it) => it.__kind === "personal" && termKey(it) === termKey(sharedTerm));
     if (alreadyPersonal) return showStatus("Already in My terms");
 
     const next = new Set(savingIds);
@@ -341,7 +337,6 @@ export default function Glossary() {
           />
 
           <label className="small muted">{targetLabel(targetLang)}</label>
-
           <input
             className="input"
             value={form.target_text}
