@@ -60,7 +60,7 @@ export default function PlayPage() {
 
   // Game state
   const [started, setStarted] = useState(false);
-  const [question, setQuestion] = useState(null); // { en, correct }
+  const [question, setQuestion] = useState(null); // { en, correct, opts, difficulty, dom }
   const [options, setOptions] = useState([]); // strings (translations)
   const [selected, setSelected] = useState(null);
   const [reveal, setReveal] = useState(false);
@@ -86,7 +86,6 @@ export default function PlayPage() {
     correctAudioRef.current = new Audio("/sounds/correct.mp3");
     wrongAudioRef.current = new Audio("/sounds/wrong.mp3");
 
-    // Put your ticking file name here if different:
     tickAudioRef.current = new Audio("/sounds/tick.mp3");
     tickAudioRef.current.loop = true;
 
@@ -164,9 +163,7 @@ export default function PlayPage() {
           console.error(error);
           setPool([]);
         } else {
-          // keep rows that have both strings
-          const cleaned =
-            (data || []).filter((r) => r?.source_text && r?.target_text) || [];
+          const cleaned = (data || []).filter((r) => r?.source_text && r?.target_text);
           setPool(cleaned);
         }
         setLoading(false);
@@ -174,7 +171,6 @@ export default function PlayPage() {
     }
 
     load();
-
     return () => {
       cancelled = true;
     };
@@ -190,7 +186,6 @@ export default function PlayPage() {
     const correct = String(correctRow.target_text);
     const en = String(correctRow.source_text);
 
-    // distractors: other target_text values
     const distractors = shuffle(
       rows
         .filter((r) => r.target_text && r.target_text !== correctRow.target_text)
@@ -198,7 +193,14 @@ export default function PlayPage() {
     ).slice(0, 2);
 
     const opts = shuffle([correct, ...distractors]);
-    return { en, correct, opts, difficulty: correctRow.difficulty ?? 1, dom: correctRow.domain ?? "" };
+
+    return {
+      en,
+      correct,
+      opts,
+      difficulty: correctRow.difficulty ?? 1,
+      dom: correctRow.domain ?? "",
+    };
   }
 
   function startRound() {
@@ -218,18 +220,14 @@ export default function PlayPage() {
     setQuestion(q);
     setOptions(q.opts);
 
-    // Start ticking immediately if allowed
-    if (soundOn && audioReadyRef.current) {
-      playTick();
-    }
+    if (soundOn && audioReadyRef.current) playTick();
 
-    // Start countdown
     timerRef.current = setInterval(() => {
       setTimeLeft((t) => t - 1);
     }, 1000);
   }
 
-  // Time's up logic
+  // Time's up
   useEffect(() => {
     if (!started) return;
     if (!question) return;
@@ -273,14 +271,13 @@ export default function PlayPage() {
       playSound("wrong");
     }
 
-    // auto-advance after showing result briefly
     advanceRef.current = setTimeout(() => {
       startRound();
     }, AUTO_ADVANCE_MS);
   }
 
   async function unlockAudioAndStart() {
-    // This must be triggered by a user gesture (click) to satisfy browser audio rules.
+    // Must be user gesture (button click)
     try {
       if (correctAudioRef.current) {
         correctAudioRef.current.muted = true;
@@ -295,8 +292,6 @@ export default function PlayPage() {
     setAudioReady(true);
 
     setStarted(true);
-
-    // Start first round AFTER audio is ready (ref updates immediately)
     startRound();
   }
 
@@ -315,7 +310,6 @@ export default function PlayPage() {
     setStatusText("");
   }
 
-  // If user toggles sound off, stop ticking immediately
   useEffect(() => {
     if (!soundOn) stopTick();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -327,6 +321,7 @@ export default function PlayPage() {
         <h1>Play</h1>
         <p className="muted">Pick the correct translation before the timer runs out.</p>
 
+        {/* Score + Time */}
         <div className="row" style={{ marginTop: 12 }}>
           <div>
             <div className="muted">Score</div>
@@ -334,19 +329,24 @@ export default function PlayPage() {
               {score}/{total}
             </div>
           </div>
-
           <div>
             <div className="muted">Time</div>
             <div style={{ fontWeight: 700 }}>{started && question ? timeLeft : "-"}</div>
           </div>
         </div>
 
-        <div className="row" style={{ marginTop: 12, gap: 10, flexWrap: "wrap" }}>
-          <div>
+        {/* Controls (match Practice/Glossary styling) */}
+        <div className="row" style={{ marginTop: 12, gap: 12, flexWrap: "wrap" }}>
+          <div style={{ minWidth: 180 }}>
             <label className="muted" style={{ display: "block", marginBottom: 6 }}>
               Language
             </label>
-            <select value={lang} onChange={(e) => setLang(e.target.value)}>
+            <select
+              className="input"
+              value={lang}
+              onChange={(e) => setLang(e.target.value)}
+              disabled={started} // optional: prevent changing mid-round
+            >
               {LANGUAGE_OPTIONS.map((o) => (
                 <option key={o.code} value={o.code}>
                   {o.label}
@@ -355,11 +355,16 @@ export default function PlayPage() {
             </select>
           </div>
 
-          <div>
+          <div style={{ minWidth: 180 }}>
             <label className="muted" style={{ display: "block", marginBottom: 6 }}>
               Domain
             </label>
-            <select value={domain} onChange={(e) => setDomain(e.target.value)}>
+            <select
+              className="input"
+              value={domain}
+              onChange={(e) => setDomain(e.target.value)}
+              disabled={started} // optional: prevent changing mid-round
+            >
               {DOMAIN_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
@@ -368,8 +373,8 @@ export default function PlayPage() {
             </select>
           </div>
 
-          <div style={{ alignSelf: "end", display: "flex", gap: 12, alignItems: "center" }}>
-            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{ display: "flex", alignItems: "end", gap: 14 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, userSelect: "none" }}>
               <input
                 type="checkbox"
                 checked={soundOn}
@@ -378,99 +383,94 @@ export default function PlayPage() {
               <span>Sound</span>
             </label>
 
-            <button className="btn secondary" onClick={resetGame}>
+            <button className="btn" onClick={resetGame}>
               Reset
             </button>
           </div>
         </div>
 
-        <hr style={{ margin: "16px 0" }} />
+        <div className="hr" style={{ marginTop: 12 }} />
 
+        {/* Body */}
         {loading ? (
-          <p className="muted">Loading terms…</p>
+          <div className="muted">Loading terms…</div>
         ) : !canPlay ? (
-          <p className="muted">
-            Not enough terms found for this selection. (Need at least 4)
-          </p>
+          <div className="muted">
+            Not enough terms for this Language/Domain (need at least 4).
+          </div>
         ) : !started ? (
-          <div>
-            <p className="muted" style={{ marginBottom: 10 }}>
+          <div className="col" style={{ gap: 10 }}>
+            <div className="muted">
               Tap Start to begin (this also enables sound on your browser).
-            </p>
-            <button className="btn" onClick={unlockAudioAndStart} disabled={!canPlay}>
+            </div>
+            <button className="btn btnPrimary" onClick={unlockAudioAndStart}>
               Start
             </button>
-            {!audioReady && (
-              <p className="muted" style={{ marginTop: 10 }}>
-                (Audio locked until you press Start)
-              </p>
-            )}
+            <div className="small muted">
+              (Audio {audioReady ? "unlocked ✅" : "locked until you press Start"})
+            </div>
           </div>
         ) : (
-          <div>
-            <div className="muted" style={{ marginBottom: 6 }}>
-              Domain: {question?.dom || domain} · Difficulty: {question?.difficulty ?? 1}
-            </div>
+          <>
+            {question && (
+              <>
+                <div className="small muted" style={{ marginTop: 4 }}>
+                  Domain: {question.dom || "-"} · Difficulty: {question.difficulty ?? 1}
+                </div>
 
-            <div style={{ fontSize: 34, fontWeight: 800, marginBottom: 10 }}>
-              {question?.en}
-            </div>
+                <div className="h1" style={{ marginTop: 10 }}>
+                  {question.en}
+                </div>
 
-            <div style={{ display: "grid", gap: 10 }}>
-              {options.map((opt) => {
-                const isCorrect =
-                  reveal && normalizeText(opt) === normalizeText(question?.correct);
-                const isSelected = reveal && selected && normalizeText(opt) === normalizeText(selected);
+                <div className="col" style={{ marginTop: 12, gap: 10 }}>
+                  {options.map((opt) => {
+                    const isPicked = selected === opt;
+                    const isCorrect = question && normalizeText(opt) === normalizeText(question.correct);
 
-                let border = "1px solid #e5e5e5";
-                let bg = "white";
+                    let cls = "btn";
+                    if (reveal) {
+                      if (isCorrect) cls = "btn btnPrimary";
+                      else if (isPicked && !isCorrect) cls = "btn btnDanger";
+                    }
 
-                if (reveal && isCorrect) {
-                  border = "1px solid #16a34a";
-                  bg = "#f0fdf4";
-                } else if (reveal && isSelected && !isCorrect) {
-                  border = "1px solid #dc2626";
-                  bg = "#fef2f2";
-                }
+                    return (
+                      <button
+                        key={opt}
+                        className={cls}
+                        onClick={() => choose(opt)}
+                        disabled={reveal}
+                        style={{ textAlign: "left" }}
+                      >
+                        {opt}
+                      </button>
+                    );
+                  })}
+                </div>
 
-                return (
+                <div className="row" style={{ marginTop: 12, alignItems: "center", gap: 10 }}>
+                  <div className="muted">{statusText || "Choose an option…"}</div>
+
                   <button
-                    key={opt}
-                    className="btn secondary"
-                    style={{
-                      textAlign: "left",
-                      justifyContent: "flex-start",
-                      border,
-                      background: bg,
-                      cursor: reveal ? "default" : "pointer",
+                    className="btn"
+                    onClick={() => {
+                      if (reveal) return;
+                      // treat skip as wrong, then next
+                      stopAllTimers();
+                      stopTick();
+                      setReveal(true);
+                      setTotal((n) => n + 1);
+                      setStatusText("Skipped ⏭️");
+                      playSound("wrong");
+                      advanceRef.current = setTimeout(() => startRound(), AUTO_ADVANCE_MS);
                     }}
-                    onClick={() => choose(opt)}
                     disabled={reveal}
                   >
-                    {opt}
+                    Skip
                   </button>
-                );
-              })}
-            </div>
-
-            <div style={{ marginTop: 12 }}>
-              {reveal ? (
-                <div>
-                  <div style={{ fontWeight: 700 }}>
-                    {statusText} — Correct: <span style={{ fontWeight: 800 }}>{question?.correct}</span>
-                  </div>
                 </div>
-              ) : (
-                <div className="muted">Choose an option…</div>
-              )}
-            </div>
-
-            <div style={{ marginTop: 12 }}>
-              <button className="btn secondary" onClick={startRound} disabled={!canPlay}>
-                Skip
-              </button>
-            </div>
-          </div>
+              </>
+            )}
+          </>
         )}
       </div>
     </div>
