@@ -18,6 +18,9 @@ const languages = [
   { value: "ar", label: "Arabic (AR)" },
 ];
 
+// which languages benefit from native script entry/display
+const LANGS_WITH_NATIVE = new Set(["ar"]);
+
 function domainLabel(value) {
   const d = domains.find((x) => x.value === value);
   return d?.label ?? "Unassigned";
@@ -40,9 +43,18 @@ function targetLabel(targetLang) {
     case "hi":
       return "Hindi";
     case "ar":
-      return "Arabic";
+      return "Arabic (Roman)";
     default:
       return "Translation";
+  }
+}
+
+function targetNativeLabel(targetLang) {
+  switch (targetLang) {
+    case "ar":
+      return "Arabic (Native)";
+    default:
+      return "Native (optional)";
   }
 }
 
@@ -65,8 +77,16 @@ function targetPlaceholder(targetLang) {
   }
 }
 
-// Split a target_text that may include multiple answers.
-// Keep it conservative: only split on obvious separators.
+function targetNativePlaceholder(targetLang) {
+  switch (targetLang) {
+    case "ar":
+      return "e.g., محكمة / عام / حق";
+    default:
+      return "e.g., native script";
+  }
+}
+
+// Split target strings with obvious separators only
 function splitTargets(raw) {
   const s = (raw || "").toString().trim();
   if (!s) return [];
@@ -107,6 +127,7 @@ export default function Glossary() {
     domain: "court",
     source_text: "",
     target_text: "",
+    target_native: "",
     notes: "",
   });
 
@@ -129,15 +150,12 @@ export default function Glossary() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetLang]);
 
-  // Key used to detect duplicates within the SAME language
-  // We normalize source_text so "Election" and "election" collapse.
   function termKey(it) {
     return `${normalizeKey(it.domain)}|${normalizeKey(it.source_text)}|${normalizeKey(
       it.target_lang || targetLang
     )}|${it.__kind || ""}`;
   }
 
-  // Dedupe list by key, and merge target_text if duplicates exist
   function dedupeList(list) {
     const map = new Map();
 
@@ -150,10 +168,9 @@ export default function Glossary() {
         continue;
       }
 
-      // Merge target_text when duplicates exist (keeps all valid answers)
       const mergedTarget = dedupeAndMergeTargets(prev.target_text, it.target_text);
+      const mergedNative = dedupeAndMergeTargets(prev.target_native, it.target_native);
 
-      // Prefer a nicer looking source_text (e.g., keep Title Case if present)
       const prevSrc = (prev.source_text || "").toString().trim();
       const nextSrc = (it.source_text || "").toString().trim();
       const betterSource =
@@ -167,6 +184,7 @@ export default function Glossary() {
         ...prev,
         source_text: betterSource,
         target_text: mergedTarget,
+        target_native: mergedNative,
       });
     }
 
@@ -184,8 +202,9 @@ export default function Glossary() {
 
       const s = (it.source_text || "").toLowerCase();
       const tr = (it.target_text || "").toLowerCase();
+      const tn = (it.target_native || "").toLowerCase();
       const n = (it.notes || "").toLowerCase();
-      return s.includes(t) || tr.includes(t) || n.includes(t);
+      return s.includes(t) || tr.includes(t) || tn.includes(t) || n.includes(t);
     });
   }, [items, q, domainFilter]);
 
@@ -197,7 +216,7 @@ export default function Glossary() {
 
     const sharedRes = await supabase
       .from("terms")
-      .select("id,domain,source_text,target_text,source_lang,target_lang")
+      .select("id,domain,source_text,target_text,target_native,source_lang,target_lang")
       .eq("source_lang", "en")
       .eq("target_lang", targetLang)
       .limit(5000);
@@ -211,7 +230,7 @@ export default function Glossary() {
     if (user) {
       personalRes = await supabase
         .from("user_terms")
-        .select("id,domain,source_text,target_text,notes,source_lang,target_lang,created_at")
+        .select("id,domain,source_text,target_text,target_native,notes,source_lang,target_lang,created_at")
         .eq("source_lang", "en")
         .eq("target_lang", targetLang)
         .order("created_at", { ascending: false })
@@ -234,8 +253,7 @@ export default function Glossary() {
       __kind: "personal",
     }));
 
-    // If user has a personal term for the same normalized English/domain/lang,
-    // we hide the shared one (personal wins).
+    // personal overrides shared for same English/domain/lang
     const personalKeyNoKind = (it) =>
       `${normalizeKey(it.domain)}|${normalizeKey(it.source_text)}|${normalizeKey(
         it.target_lang || targetLang
@@ -244,7 +262,6 @@ export default function Glossary() {
     const personalKeys = new Set(personal.map(personalKeyNoKind));
     const sharedFiltered = shared.filter((t) => !personalKeys.has(personalKeyNoKind(t)));
 
-    // De-dupe within each list
     const personalDeduped = dedupeList(personal);
     const sharedDeduped = dedupeList(sharedFiltered);
 
@@ -267,6 +284,7 @@ export default function Glossary() {
       domain: form.domain,
       source_text: form.source_text.trim(),
       target_text: form.target_text.trim(),
+      target_native: form.target_native.trim() || null,
       notes: form.notes.trim() || null,
     };
 
@@ -276,7 +294,14 @@ export default function Glossary() {
 
     if (res.error) return alert(res.error.message);
 
-    setForm({ id: null, domain: "court", source_text: "", target_text: "", notes: "" });
+    setForm({
+      id: null,
+      domain: "court",
+      source_text: "",
+      target_text: "",
+      target_native: "",
+      notes: "",
+    });
     showStatus(form.id ? "Saved ✓" : "Added ✓");
     await load();
   }
@@ -289,6 +314,7 @@ export default function Glossary() {
       domain: it.domain || "court",
       source_text: it.source_text ?? "",
       target_text: it.target_text ?? "",
+      target_native: it.target_native ?? "",
       notes: it.notes ?? "",
     });
 
@@ -304,62 +330,47 @@ export default function Glossary() {
   }
 
   async function addSharedToMyTerms(sharedTerm) {
-    if (savingIds.has(sharedTerm.id)) return;
+    try {
+      const next = new Set(savingIds);
+      next.add(sharedTerm.id);
+      setSavingIds(next);
 
-    const { data: userRes } = await supabase.auth.getUser();
-    const user = userRes?.user;
-    if (!user) return alert("Please sign in to save personal terms.");
+      const { data: userRes } = await supabase.auth.getUser();
+      const user = userRes?.user;
+      if (!user) return alert("Please sign in.");
 
-    const alreadyPersonal = items.some(
-      (it) =>
-        it.__kind === "personal" &&
-        normalizeKey(it.domain) === normalizeKey(sharedTerm.domain) &&
-        normalizeKey(it.source_text) === normalizeKey(sharedTerm.source_text) &&
-        normalizeKey(it.target_lang || targetLang) ===
-          normalizeKey(sharedTerm.target_lang || targetLang)
-    );
-    if (alreadyPersonal) return showStatus("Already in My terms");
+      const payload = {
+        user_id: user.id,
+        source_lang: "en",
+        target_lang: targetLang,
+        domain: sharedTerm.domain || "court",
+        source_text: (sharedTerm.source_text || "").trim(),
+        target_text: (sharedTerm.target_text || "").trim(),
+        target_native: (sharedTerm.target_native || "").trim() || null,
+        notes: null,
+      };
 
-    const next = new Set(savingIds);
-    next.add(sharedTerm.id);
-    setSavingIds(next);
+      const res = await supabase.from("user_terms").insert(payload);
+      if (res.error) return alert(res.error.message);
 
-    const payload = {
-      user_id: user.id,
-      source_lang: "en",
-      target_lang: targetLang,
-      domain: sharedTerm.domain || "court",
-      source_text: (sharedTerm.source_text || "").trim(),
-      target_text: (sharedTerm.target_text || "").trim(),
-      notes: null,
-    };
-
-    const res = await supabase.from("user_terms").insert(payload);
-
-    const next2 = new Set(next);
-    next2.delete(sharedTerm.id);
-    setSavingIds(next2);
-
-    if (res.error) return alert(res.error.message);
-
-    showStatus("Saved to My terms ✓");
-    await load();
+      showStatus("Added to My Terms ✓");
+      await load();
+    } finally {
+      const next = new Set(savingIds);
+      next.delete(sharedTerm.id);
+      setSavingIds(next);
+    }
   }
+
+  const showNativeField = LANGS_WITH_NATIVE.has(targetLang);
 
   return (
     <div className="container">
       <div className="card">
         <div className="h1">Glossary</div>
 
-        {status ? (
-          <div className="small muted" style={{ marginTop: 8 }}>
-            {status}
-          </div>
-        ) : null}
-
-        <label className="small muted" style={{ marginTop: 10 }}>
-          Language
-        </label>
+        {/* Language picker */}
+        <label className="small muted">Language</label>
         <select className="select" value={targetLang} onChange={(e) => setTargetLang(e.target.value)}>
           {languages.map((l) => (
             <option key={l.value} value={l.value}>
@@ -368,22 +379,11 @@ export default function Glossary() {
           ))}
         </select>
 
-        <label className="small muted" style={{ marginTop: 10 }}>
-          Filter list by domain
-        </label>
-        <select className="select" value={domainFilter} onChange={(e) => setDomainFilter(e.target.value)}>
-          <option value="all">All</option>
-          {domains.map((d) => (
-            <option key={d.value} value={d.value}>
-              {d.label}
-            </option>
-          ))}
-        </select>
-
         <div className="hr" />
 
+        {/* Add/Edit form */}
         <form onSubmit={upsert} className="col">
-          <label className="small muted">Domain for new term</label>
+          <label className="small muted">Domain</label>
           <select className="select" value={form.domain} onChange={(e) => setForm({ ...form, domain: e.target.value })}>
             {domains.map((d) => (
               <option key={d.value} value={d.value}>
@@ -408,6 +408,18 @@ export default function Glossary() {
             placeholder={targetPlaceholder(targetLang)}
           />
 
+          {showNativeField ? (
+            <>
+              <label className="small muted">{targetNativeLabel(targetLang)}</label>
+              <input
+                className="input"
+                value={form.target_native}
+                onChange={(e) => setForm({ ...form, target_native: e.target.value })}
+                placeholder={targetNativePlaceholder(targetLang)}
+              />
+            </>
+          ) : null}
+
           <label className="small muted">Notes (optional)</label>
           <input
             className="input"
@@ -424,58 +436,91 @@ export default function Glossary() {
             <button
               className="btn"
               type="button"
-              onClick={() => setForm({ id: null, domain: "court", source_text: "", target_text: "", notes: "" })}
+              onClick={() =>
+                setForm({
+                  id: null,
+                  domain: "court",
+                  source_text: "",
+                  target_text: "",
+                  target_native: "",
+                  notes: "",
+                })
+              }
             >
               Cancel edit
             </button>
           ) : null}
+
+          {status ? <div className="small muted" style={{ marginTop: 8 }}>{status}</div> : null}
         </form>
       </div>
 
       <div style={{ height: 12 }} />
 
       <div className="card">
-        <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search glossary…" />
+        {/* Filters */}
+        <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+          <input
+            className="input"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search glossary…"
+            style={{ flex: 1, minWidth: 220 }}
+          />
+
+          <select className="select" value={domainFilter} onChange={(e) => setDomainFilter(e.target.value)}>
+            <option value="all">All domains</option>
+            {domains.map((d) => (
+              <option key={d.value} value={d.value}>
+                {d.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <div className="hr" />
 
         {loading ? <div className="muted">Loading…</div> : null}
         {!loading && filtered.length === 0 ? <div className="muted">No terms found.</div> : null}
 
         <div className="col" style={{ marginTop: 10 }}>
-          {filtered.map((it) => {
-            const kindLabel = it.__kind === "shared" ? "Shared" : "My terms";
-            const dLabel = domainLabel(it.domain);
+          {filtered.map((it) => (
+            <div key={`${it.__kind}-${it.id}`} className="card" style={{ padding: 12 }}>
+              <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+                <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                  <span className="badge">{domainLabel(it.domain)}</span>
+                  <span className="badge">{it.__kind === "shared" ? "Shared" : "My term"}</span>
+                </div>
 
-            return (
-              <div key={`${it.__kind}-${it.id}`} className="card" style={{ padding: 12 }}>
-                <div className="row" style={{ justifyContent: "space-between" }}>
-                  <span className="badge">
-                    {kindLabel} • {dLabel}
-                  </span>
-
+                <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
                   {it.__kind === "personal" ? (
-                    <div className="row">
-                      <button className="btn" onClick={() => edit(it)}>
-                        Edit
-                      </button>
-                      <button className="btn btnDanger" onClick={() => del(it.id)}>
-                        Delete
-                      </button>
-                    </div>
+                    <>
+                      <button className="btn" onClick={() => edit(it)}>Edit</button>
+                      <button className="btn btnDanger" onClick={() => del(it.id)}>Delete</button>
+                    </>
                   ) : (
-                    <button className="btn" disabled={savingIds.has(it.id)} onClick={() => addSharedToMyTerms(it)}>
-                      {savingIds.has(it.id) ? "Saving…" : "Add to My Terms"}
+                    <button
+                      className="btn"
+                      onClick={() => addSharedToMyTerms(it)}
+                      disabled={savingIds.has(it.id)}
+                    >
+                      {savingIds.has(it.id) ? "Adding…" : "Add to My Terms"}
                     </button>
                   )}
                 </div>
-
-                <div style={{ marginTop: 8, fontWeight: 700 }}>{it.source_text}</div>
-                <div style={{ marginTop: 4 }}>{it.target_text}</div>
-
-                {it.notes ? <div className="small muted" style={{ marginTop: 6 }}>{it.notes}</div> : null}
               </div>
-            );
-          })}
+
+              <div style={{ marginTop: 10, fontWeight: 800 }}>{it.source_text}</div>
+
+              {/* Native first (if exists), then roman */}
+              {it.target_native ? (
+                <div style={{ marginTop: 6, fontSize: 18, lineHeight: 1.3 }}>{it.target_native}</div>
+              ) : null}
+              <div style={{ marginTop: it.target_native ? 4 : 6 }}>{it.target_text}</div>
+
+              {it.notes ? <div className="small muted" style={{ marginTop: 6 }}>{it.notes}</div> : null}
+            </div>
+          ))}
         </div>
       </div>
     </div>

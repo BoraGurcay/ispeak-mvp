@@ -3,9 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 
-// If your table name is different, change it here:
 const TERMS_TABLE = "terms";
-
 const ROUND_SECONDS = 10;
 const AUTO_ADVANCE_MS = 600;
 
@@ -14,8 +12,8 @@ const LANGUAGE_OPTIONS = [
   { code: "fr", label: "French (FR)" },
   { code: "es", label: "Spanish (ES)" },
   { code: "pt", label: "Portuguese (PT)" },
-  { code: "ar", label: "Arabic (AR)" },
   { code: "hi", label: "Hindi (HI)" },
+  { code: "ar", label: "Arabic (AR)" },
 ];
 
 const DOMAIN_OPTIONS = [
@@ -44,24 +42,24 @@ function normalizeText(s) {
     .toLowerCase()
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[’']/g, "'")
-    .replace(/\s+/g, " ");
+    .replace(/[’‘´`]/g, "'")
+    .replace(/'/g, "")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export default function PlayPage() {
-  // Settings
   const [lang, setLang] = useState("tr");
   const [domain, setDomain] = useState("court");
   const [soundOn, setSoundOn] = useState(true);
 
-  // Data
   const [loading, setLoading] = useState(true);
   const [pool, setPool] = useState([]);
 
-  // Game state
   const [started, setStarted] = useState(false);
-  const [question, setQuestion] = useState(null); // { en, correct, opts, difficulty, dom }
-  const [options, setOptions] = useState([]); // strings (translations)
+  const [question, setQuestion] = useState(null); // { en, correctDisplay, optsDisplay }
+  const [options, setOptions] = useState([]);
   const [selected, setSelected] = useState(null);
   const [reveal, setReveal] = useState(false);
   const [timeLeft, setTimeLeft] = useState(ROUND_SECONDS);
@@ -69,7 +67,6 @@ export default function PlayPage() {
   const [total, setTotal] = useState(0);
   const [statusText, setStatusText] = useState("");
 
-  // Timers & audio
   const timerRef = useRef(null);
   const advanceRef = useRef(null);
 
@@ -77,15 +74,12 @@ export default function PlayPage() {
   const wrongAudioRef = useRef(null);
   const tickAudioRef = useRef(null);
 
-  // IMPORTANT: audioReady in a ref (updates immediately) + state (for UI)
   const audioReadyRef = useRef(false);
   const [audioReady, setAudioReady] = useState(false);
 
-  // Load sounds once
   useEffect(() => {
     correctAudioRef.current = new Audio("/sounds/correct.mp3");
     wrongAudioRef.current = new Audio("/sounds/wrong.mp3");
-
     tickAudioRef.current = new Audio("/sounds/tick.mp3");
     tickAudioRef.current.loop = true;
 
@@ -99,7 +93,6 @@ export default function PlayPage() {
   function stopAllTimers() {
     if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = null;
-
     if (advanceRef.current) clearTimeout(advanceRef.current);
     advanceRef.current = null;
   }
@@ -134,7 +127,13 @@ export default function PlayPage() {
     } catch {}
   }
 
-  // Fetch terms for selected language/domain
+  // For Arabic (and future), prefer native display if present
+  function displayForRow(row) {
+    const native = (row?.target_native || "").trim();
+    const roman = (row?.target_text || "").trim();
+    return native || roman;
+  }
+
   useEffect(() => {
     let cancelled = false;
 
@@ -151,19 +150,19 @@ export default function PlayPage() {
 
       const q = supabase
         .from(TERMS_TABLE)
-        .select("source_text, target_text, domain, difficulty, target_lang")
+        .select("source_text, target_text, target_native, domain, difficulty, target_lang")
         .eq("target_lang", lang);
 
       if (domain !== "all") q.eq("domain", domain);
 
-      const { data, error } = await q.limit(500);
+      const { data, error } = await q.limit(700);
 
       if (!cancelled) {
         if (error) {
           console.error(error);
           setPool([]);
         } else {
-          const cleaned = (data || []).filter((r) => r?.source_text && r?.target_text);
+          const cleaned = (data || []).filter((r) => r?.source_text && (r?.target_text || r?.target_native));
           setPool(cleaned);
         }
         setLoading(false);
@@ -183,24 +182,19 @@ export default function PlayPage() {
     if (rows.length < 4) return null;
 
     const correctRow = pickRandom(rows);
-    const correct = String(correctRow.target_text);
-    const en = String(correctRow.source_text);
 
+    const en = String(correctRow.source_text);
+    const correctDisplay = displayForRow(correctRow);
+
+    // distractors based on display string
     const distractors = shuffle(
       rows
-        .filter((r) => r.target_text && r.target_text !== correctRow.target_text)
-        .map((r) => String(r.target_text))
+        .filter((r) => displayForRow(r) && normalizeText(displayForRow(r)) !== normalizeText(correctDisplay))
+        .map((r) => displayForRow(r))
     ).slice(0, 2);
 
-    const opts = shuffle([correct, ...distractors]);
-
-    return {
-      en,
-      correct,
-      opts,
-      difficulty: correctRow.difficulty ?? 1,
-      dom: correctRow.domain ?? "",
-    };
+    const optsDisplay = shuffle([correctDisplay, ...distractors]);
+    return { en, correctDisplay, optsDisplay };
   }
 
   function startRound() {
@@ -218,7 +212,7 @@ export default function PlayPage() {
     if (!q) return;
 
     setQuestion(q);
-    setOptions(q.opts);
+    setOptions(q.optsDisplay);
 
     if (soundOn && audioReadyRef.current) playTick();
 
@@ -227,7 +221,6 @@ export default function PlayPage() {
     }, 1000);
   }
 
-  // Time's up
   useEffect(() => {
     if (!started) return;
     if (!question) return;
@@ -242,9 +235,7 @@ export default function PlayPage() {
       setStatusText("Time’s up ⏱️");
       playSound("wrong");
 
-      advanceRef.current = setTimeout(() => {
-        startRound();
-      }, AUTO_ADVANCE_MS);
+      advanceRef.current = setTimeout(() => startRound(), AUTO_ADVANCE_MS);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeLeft, started, question, reveal]);
@@ -259,7 +250,7 @@ export default function PlayPage() {
     setSelected(opt);
     setReveal(true);
 
-    const isCorrect = normalizeText(opt) === normalizeText(question.correct);
+    const isCorrect = normalizeText(opt) === normalizeText(question.correctDisplay);
 
     setTotal((n) => n + 1);
     if (isCorrect) {
@@ -271,13 +262,10 @@ export default function PlayPage() {
       playSound("wrong");
     }
 
-    advanceRef.current = setTimeout(() => {
-      startRound();
-    }, AUTO_ADVANCE_MS);
+    advanceRef.current = setTimeout(() => startRound(), AUTO_ADVANCE_MS);
   }
 
   async function unlockAudioAndStart() {
-    // Must be user gesture (button click)
     try {
       if (correctAudioRef.current) {
         correctAudioRef.current.muted = true;
@@ -298,7 +286,6 @@ export default function PlayPage() {
   function resetGame() {
     stopAllTimers();
     stopTick();
-
     setStarted(false);
     setQuestion(null);
     setOptions([]);
@@ -318,159 +305,97 @@ export default function PlayPage() {
   return (
     <div className="container">
       <div className="card">
-        <h1>Play</h1>
-        <p className="muted">Pick the correct translation before the timer runs out.</p>
+        <div className="h1">Play</div>
+        <div className="small muted">Pick the correct translation before the timer runs out.</div>
 
-        {/* Score + Time */}
-        <div className="row" style={{ marginTop: 12 }}>
-          <div>
-            <div className="muted">Score</div>
-            <div style={{ fontWeight: 700 }}>
-              {score}/{total}
-            </div>
+        <div className="row" style={{ marginTop: 10, gap: 10, flexWrap: "wrap" }}>
+          <div className="badge">
+            Score: {score}/{total}
           </div>
-          <div>
-            <div className="muted">Time</div>
-            <div style={{ fontWeight: 700 }}>{started && question ? timeLeft : "-"}</div>
-          </div>
+          <div className="badge">Time: {started && question ? timeLeft : "-"}</div>
+          <button className={"btn " + (soundOn ? "" : "btnDanger")} type="button" onClick={() => setSoundOn((s) => !s)}>
+            Sound: {soundOn ? "On" : "Off"}
+          </button>
         </div>
 
-        {/* Controls (match Practice/Glossary styling) */}
         <div className="row" style={{ marginTop: 12, gap: 12, flexWrap: "wrap" }}>
-          <div style={{ minWidth: 180 }}>
-            <label className="muted" style={{ display: "block", marginBottom: 6 }}>
-              Language
-            </label>
-            <select
-              className="input"
-              value={lang}
-              onChange={(e) => setLang(e.target.value)}
-              disabled={started} // optional: prevent changing mid-round
-            >
-              {LANGUAGE_OPTIONS.map((o) => (
-                <option key={o.code} value={o.code}>
-                  {o.label}
+          <div style={{ minWidth: 220 }}>
+            <label className="small muted">Language</label>
+            <select className="select" value={lang} onChange={(e) => setLang(e.target.value)}>
+              {LANGUAGE_OPTIONS.map((l) => (
+                <option key={l.code} value={l.code}>
+                  {l.label}
                 </option>
               ))}
             </select>
           </div>
 
-          <div style={{ minWidth: 180 }}>
-            <label className="muted" style={{ display: "block", marginBottom: 6 }}>
-              Domain
-            </label>
-            <select
-              className="input"
-              value={domain}
-              onChange={(e) => setDomain(e.target.value)}
-              disabled={started} // optional: prevent changing mid-round
-            >
-              {DOMAIN_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
+          <div style={{ minWidth: 220 }}>
+            <label className="small muted">Domain</label>
+            <select className="select" value={domain} onChange={(e) => setDomain(e.target.value)}>
+              {DOMAIN_OPTIONS.map((d) => (
+                <option key={d.value} value={d.value}>
+                  {d.label}
                 </option>
               ))}
             </select>
           </div>
 
-          <div style={{ display: "flex", alignItems: "end", gap: 14 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, userSelect: "none" }}>
-              <input
-                type="checkbox"
-                checked={soundOn}
-                onChange={(e) => setSoundOn(e.target.checked)}
-              />
-              <span>Sound</span>
-            </label>
-
-            <button className="btn" onClick={resetGame}>
-              Reset
-            </button>
-          </div>
-        </div>
-
-        <div className="hr" style={{ marginTop: 12 }} />
-
-        {/* Body */}
-        {loading ? (
-          <div className="muted">Loading terms…</div>
-        ) : !canPlay ? (
-          <div className="muted">
-            Not enough terms for this Language/Domain (need at least 4).
-          </div>
-        ) : !started ? (
-          <div className="col" style={{ gap: 10 }}>
-            <div className="muted">
-              Tap Start to begin (this also enables sound on your browser).
-            </div>
-            <button className="btn btnPrimary" onClick={unlockAudioAndStart}>
-              Start
-            </button>
-            <div className="small muted">
-              (Audio {audioReady ? "unlocked ✅" : "locked until you press Start"})
-            </div>
-          </div>
-        ) : (
-          <>
-            {question && (
+          <div className="row" style={{ alignItems: "flex-end", gap: 10, flexWrap: "wrap" }}>
+            {!started ? (
+              <button className="btn btnPrimary" type="button" disabled={!canPlay || loading} onClick={unlockAudioAndStart}>
+                {loading ? "Loading…" : canPlay ? (audioReady ? "Start" : "Start") : "Not enough terms"}
+              </button>
+            ) : (
               <>
-                <div className="small muted" style={{ marginTop: 4 }}>
-                  Domain: {question.dom || "-"} · Difficulty: {question.difficulty ?? 1}
-                </div>
-
-                <div className="h1" style={{ marginTop: 10 }}>
-                  {question.en}
-                </div>
-
-                <div className="col" style={{ marginTop: 12, gap: 10 }}>
-                  {options.map((opt) => {
-                    const isPicked = selected === opt;
-                    const isCorrect = question && normalizeText(opt) === normalizeText(question.correct);
-
-                    let cls = "btn";
-                    if (reveal) {
-                      if (isCorrect) cls = "btn btnPrimary";
-                      else if (isPicked && !isCorrect) cls = "btn btnDanger";
-                    }
-
-                    return (
-                      <button
-                        key={opt}
-                        className={cls}
-                        onClick={() => choose(opt)}
-                        disabled={reveal}
-                        style={{ textAlign: "left" }}
-                      >
-                        {opt}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="row" style={{ marginTop: 12, alignItems: "center", gap: 10 }}>
-                  <div className="muted">{statusText || "Choose an option…"}</div>
-
-                  <button
-                    className="btn"
-                    onClick={() => {
-                      if (reveal) return;
-                      // treat skip as wrong, then next
-                      stopAllTimers();
-                      stopTick();
-                      setReveal(true);
-                      setTotal((n) => n + 1);
-                      setStatusText("Skipped ⏭️");
-                      playSound("wrong");
-                      advanceRef.current = setTimeout(() => startRound(), AUTO_ADVANCE_MS);
-                    }}
-                    disabled={reveal}
-                  >
-                    Skip
-                  </button>
-                </div>
+                <button className="btn" type="button" onClick={resetGame}>Reset</button>
               </>
             )}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ height: 12 }} />
+
+      <div className="card">
+        {loading ? <div className="muted">Loading…</div> : null}
+        {!loading && !canPlay ? <div className="muted">Need at least 4 terms for this language/domain.</div> : null}
+
+        {started && question ? (
+          <>
+            <div style={{ fontSize: 22, fontWeight: 800, marginTop: 6 }}>{question.en}</div>
+
+            {statusText ? (
+              <div className="small muted" style={{ marginTop: 8 }}>
+                {statusText}
+              </div>
+            ) : null}
+
+            <div className="col" style={{ marginTop: 12, gap: 10 }}>
+              {options.map((opt) => {
+                const isChosen = selected && normalizeText(opt) === normalizeText(selected);
+                const isCorrect = reveal && normalizeText(opt) === normalizeText(question.correctDisplay);
+                const className =
+                  "btn " +
+                  (reveal && isCorrect ? "btnPrimary" : "") +
+                  (reveal && isChosen && !isCorrect ? "btnDanger" : "");
+
+                return (
+                  <button
+                    key={opt}
+                    className={className}
+                    type="button"
+                    onClick={() => choose(opt)}
+                    disabled={!started || reveal}
+                  >
+                    {opt}
+                  </button>
+                );
+              })}
+            </div>
           </>
+        ) : (
+          <div className="muted">Press Start to begin.</div>
         )}
       </div>
     </div>
