@@ -16,10 +16,11 @@ const languages = [
   { value: "pt", label: "Portuguese (PT)" },
   { value: "hi", label: "Hindi (HI)" },
   { value: "ar", label: "Arabic (AR)" },
+  { value: "zh", label: "Mandarin (ZH)" },
 ];
 
-// which languages benefit from native script entry/display
-const LANGS_WITH_NATIVE = new Set(["ar"]);
+// languages that support native script display / input
+const LANGS_WITH_NATIVE = new Set(["ar", "hi", "zh"]);
 
 function domainLabel(value) {
   const d = domains.find((x) => x.value === value);
@@ -41,9 +42,11 @@ function targetLabel(targetLang) {
     case "pt":
       return "Portuguese";
     case "hi":
-      return "Hindi";
+      return "Hindi (Roman)";
     case "ar":
       return "Arabic (Roman)";
+    case "zh":
+      return "Mandarin (Pinyin)";
     default:
       return "Translation";
   }
@@ -53,6 +56,10 @@ function targetNativeLabel(targetLang) {
   switch (targetLang) {
     case "ar":
       return "Arabic (Native)";
+    case "hi":
+      return "Hindi (Native)";
+    case "zh":
+      return "Mandarin (Native)";
     default:
       return "Native (optional)";
   }
@@ -69,9 +76,11 @@ function targetPlaceholder(targetLang) {
     case "pt":
       return "e.g., adiamento";
     case "hi":
-      return "e.g., nyayalaya";
+      return "e.g., nyayalaya / vakil";
     case "ar":
       return "e.g., mahkama / 3am / 7aqq";
+    case "zh":
+      return "e.g., fayuan / lüshi";
     default:
       return "e.g., translation";
   }
@@ -81,6 +90,10 @@ function targetNativePlaceholder(targetLang) {
   switch (targetLang) {
     case "ar":
       return "e.g., محكمة / عام / حق";
+    case "hi":
+      return "e.g., न्यायालय / वकील";
+    case "zh":
+      return "e.g., 法院 / 律师";
     default:
       return "e.g., native script";
   }
@@ -141,7 +154,9 @@ export default function Glossary() {
 
   useEffect(() => {
     const saved = localStorage.getItem("ispeak_target_lang");
-    if (["tr", "fr", "es", "pt", "hi", "ar"].includes(saved)) setTargetLang(saved);
+    if (["tr", "fr", "es", "pt", "hi", "ar", "zh"].includes(saved)) {
+      setTargetLang(saved);
+    }
   }, []);
 
   useEffect(() => {
@@ -204,6 +219,7 @@ export default function Glossary() {
       const tr = (it.target_text || "").toLowerCase();
       const tn = (it.target_native || "").toLowerCase();
       const n = (it.notes || "").toLowerCase();
+
       return s.includes(t) || tr.includes(t) || tn.includes(t) || n.includes(t);
     });
   }, [items, q, domainFilter]);
@@ -230,7 +246,9 @@ export default function Glossary() {
     if (user) {
       personalRes = await supabase
         .from("user_terms")
-        .select("id,domain,source_text,target_text,target_native,notes,source_lang,target_lang,created_at")
+        .select(
+          "id,domain,source_text,target_text,target_native,notes,source_lang,target_lang,created_at"
+        )
         .eq("source_lang", "en")
         .eq("target_lang", targetLang)
         .order("created_at", { ascending: false })
@@ -284,13 +302,18 @@ export default function Glossary() {
       domain: form.domain,
       source_text: form.source_text.trim(),
       target_text: form.target_text.trim(),
-      target_native: form.target_native.trim() || null,
+      target_native: LANGS_WITH_NATIVE.has(targetLang)
+        ? form.target_native.trim() || null
+        : null,
       notes: form.notes.trim() || null,
     };
 
     let res;
-    if (form.id) res = await supabase.from("user_terms").update(payload).eq("id", form.id);
-    else res = await supabase.from("user_terms").insert(payload);
+    if (form.id) {
+      res = await supabase.from("user_terms").update(payload).eq("id", form.id);
+    } else {
+      res = await supabase.from("user_terms").insert(payload);
+    }
 
     if (res.error) return alert(res.error.message);
 
@@ -302,6 +325,7 @@ export default function Glossary() {
       target_native: "",
       notes: "",
     });
+
     showStatus(form.id ? "Saved ✓" : "Added ✓");
     await load();
   }
@@ -323,119 +347,158 @@ export default function Glossary() {
 
   async function del(id) {
     if (!confirm("Delete this term?")) return;
+
     const res = await supabase.from("user_terms").delete().eq("id", id);
     if (res.error) return alert(res.error.message);
+
     showStatus("Deleted ✓");
     await load();
   }
 
   async function addSharedToMyTerms(sharedTerm) {
-    try {
-      const next = new Set(savingIds);
-      next.add(sharedTerm.id);
-      setSavingIds(next);
+    if (savingIds.has(sharedTerm.id)) return;
 
-      const { data: userRes } = await supabase.auth.getUser();
-      const user = userRes?.user;
-      if (!user) return alert("Please sign in.");
+    const { data: userRes } = await supabase.auth.getUser();
+    const user = userRes?.user;
+    if (!user) return alert("Please sign in to save terms.");
 
-      const payload = {
-        user_id: user.id,
-        source_lang: "en",
-        target_lang: targetLang,
-        domain: sharedTerm.domain || "court",
-        source_text: (sharedTerm.source_text || "").trim(),
-        target_text: (sharedTerm.target_text || "").trim(),
-        target_native: (sharedTerm.target_native || "").trim() || null,
-        notes: null,
-      };
+    setSavingIds((prev) => new Set(prev).add(sharedTerm.id));
 
-      const res = await supabase.from("user_terms").insert(payload);
-      if (res.error) return alert(res.error.message);
+    const payload = {
+      user_id: user.id,
+      source_lang: "en",
+      target_lang: sharedTerm.target_lang,
+      domain: sharedTerm.domain,
+      source_text: sharedTerm.source_text,
+      target_text: sharedTerm.target_text,
+      target_native: sharedTerm.target_native || null,
+      notes: null,
+    };
 
-      showStatus("Added to My Terms ✓");
-      await load();
-    } finally {
-      const next = new Set(savingIds);
+    const res = await supabase.from("user_terms").insert(payload);
+
+    setSavingIds((prev) => {
+      const next = new Set(prev);
       next.delete(sharedTerm.id);
-      setSavingIds(next);
+      return next;
+    });
+
+    if (res.error) {
+      if (res.error.code === "23505") {
+        showStatus("Already in My Terms");
+      } else {
+        alert(res.error.message);
+      }
+      return;
     }
+
+    showStatus("Added to My Terms ✓");
+    await load();
   }
 
-  const showNativeField = LANGS_WITH_NATIVE.has(targetLang);
+  const usesNative = LANGS_WITH_NATIVE.has(targetLang);
 
   return (
     <div className="container">
       <div className="card">
-        <div className="h1">Glossary</div>
+        <h1>Glossary</h1>
 
-        {/* Language picker */}
-        <label className="small muted">Language</label>
-        <select className="select" value={targetLang} onChange={(e) => setTargetLang(e.target.value)}>
-          {languages.map((l) => (
-            <option key={l.value} value={l.value}>
-              {l.label}
-            </option>
-          ))}
-        </select>
+        <form onSubmit={upsert} className="col" style={{ gap: 12 }}>
+          <label>
+            <div className="muted" style={{ marginBottom: 6 }}>
+              Language
+            </div>
+            <select
+              className="input"
+              value={targetLang}
+              onChange={(e) => setTargetLang(e.target.value)}
+            >
+              {languages.map((l) => (
+                <option key={l.value} value={l.value}>
+                  {l.label}
+                </option>
+              ))}
+            </select>
+          </label>
 
-        <div className="hr" />
+          <div className="hr" />
 
-        {/* Add/Edit form */}
-        <form onSubmit={upsert} className="col">
-          <label className="small muted">Domain</label>
-          <select className="select" value={form.domain} onChange={(e) => setForm({ ...form, domain: e.target.value })}>
-            {domains.map((d) => (
-              <option key={d.value} value={d.value}>
-                {d.label}
-              </option>
-            ))}
-          </select>
+          <label>
+            <div className="muted" style={{ marginBottom: 6 }}>
+              Domain
+            </div>
+            <select
+              className="input"
+              value={form.domain}
+              onChange={(e) => setForm((f) => ({ ...f, domain: e.target.value }))}
+            >
+              {domains.map((d) => (
+                <option key={d.value} value={d.value}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+          </label>
 
-          <label className="small muted">English</label>
-          <input
-            className="input"
-            value={form.source_text}
-            onChange={(e) => setForm({ ...form, source_text: e.target.value })}
-            placeholder="e.g., adjournment"
-          />
+          <label>
+            <div className="muted" style={{ marginBottom: 6 }}>
+              English
+            </div>
+            <input
+              className="input"
+              value={form.source_text}
+              onChange={(e) => setForm((f) => ({ ...f, source_text: e.target.value }))}
+              placeholder="e.g., adjournment"
+            />
+          </label>
 
-          <label className="small muted">{targetLabel(targetLang)}</label>
-          <input
-            className="input"
-            value={form.target_text}
-            onChange={(e) => setForm({ ...form, target_text: e.target.value })}
-            placeholder={targetPlaceholder(targetLang)}
-          />
+          <label>
+            <div className="muted" style={{ marginBottom: 6 }}>
+              {targetLabel(targetLang)}
+            </div>
+            <input
+              className="input"
+              value={form.target_text}
+              onChange={(e) => setForm((f) => ({ ...f, target_text: e.target.value }))}
+              placeholder={targetPlaceholder(targetLang)}
+            />
+          </label>
 
-          {showNativeField ? (
-            <>
-              <label className="small muted">{targetNativeLabel(targetLang)}</label>
+          {usesNative && (
+            <label>
+              <div className="muted" style={{ marginBottom: 6 }}>
+                {targetNativeLabel(targetLang)}
+              </div>
               <input
                 className="input"
                 value={form.target_native}
-                onChange={(e) => setForm({ ...form, target_native: e.target.value })}
+                onChange={(e) => setForm((f) => ({ ...f, target_native: e.target.value }))}
                 placeholder={targetNativePlaceholder(targetLang)}
+                dir={targetLang === "ar" ? "rtl" : "auto"}
               />
-            </>
-          ) : null}
+            </label>
+          )}
 
-          <label className="small muted">Notes (optional)</label>
-          <input
-            className="input"
-            value={form.notes}
-            onChange={(e) => setForm({ ...form, notes: e.target.value })}
-            placeholder="context, caution, dialect notes…"
-          />
+          <label>
+            <div className="muted" style={{ marginBottom: 6 }}>
+              Notes (optional)
+            </div>
+            <input
+              className="input"
+              value={form.notes}
+              onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+              placeholder="context, caution, dialect notes..."
+            />
+          </label>
 
           <button className="btn btnPrimary" type="submit">
-            {form.id ? "Save" : "Add term"}
+            {form.id ? "Save term" : "Add term"}
           </button>
 
           {form.id ? (
             <button
-              className="btn"
               type="button"
+              className="btn"
               onClick={() =>
                 setForm({
                   id: null,
@@ -451,24 +514,26 @@ export default function Glossary() {
             </button>
           ) : null}
 
-          {status ? <div className="small muted" style={{ marginTop: 8 }}>{status}</div> : null}
+          {status ? <div className="small muted">{status}</div> : null}
         </form>
       </div>
 
       <div style={{ height: 12 }} />
 
       <div className="card">
-        {/* Filters */}
-        <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+        <div className="col" style={{ gap: 12 }}>
           <input
             className="input"
+            placeholder="Search glossary..."
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search glossary…"
-            style={{ flex: 1, minWidth: 220 }}
           />
 
-          <select className="select" value={domainFilter} onChange={(e) => setDomainFilter(e.target.value)}>
+          <select
+            className="input"
+            value={domainFilter}
+            onChange={(e) => setDomainFilter(e.target.value)}
+          >
             <option value="all">All domains</option>
             {domains.map((d) => (
               <option key={d.value} value={d.value}>
@@ -476,51 +541,78 @@ export default function Glossary() {
               </option>
             ))}
           </select>
-        </div>
 
-        <div className="hr" />
+          <div className="hr" />
 
-        {loading ? <div className="muted">Loading…</div> : null}
-        {!loading && filtered.length === 0 ? <div className="muted">No terms found.</div> : null}
+          {loading ? (
+            <div className="muted">Loading...</div>
+          ) : filtered.length === 0 ? (
+            <div className="muted">No terms found.</div>
+          ) : (
+            <div className="col" style={{ gap: 12 }}>
+              {filtered.map((it) => (
+                <div key={`${it.__kind}-${it.id}`} className="card">
+                  <div
+                    className="row"
+                    style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="small muted" style={{ marginBottom: 6 }}>
+                        {domainLabel(it.domain)} • {it.__kind === "personal" ? "My Terms" : "Shared"}
+                      </div>
 
-        <div className="col" style={{ marginTop: 10 }}>
-          {filtered.map((it) => (
-            <div key={`${it.__kind}-${it.id}`} className="card" style={{ padding: 12 }}>
-              <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
-                <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-                  <span className="badge">{domainLabel(it.domain)}</span>
-                  <span className="badge">{it.__kind === "shared" ? "Shared" : "My term"}</span>
+                      <div className="h2" style={{ marginBottom: 6 }}>
+                        {it.source_text}
+                      </div>
+
+                      {it.target_native ? (
+                        <div
+                          style={{
+                            fontSize: 18,
+                            lineHeight: 1.4,
+                            direction: it.target_lang === "ar" ? "rtl" : "auto",
+                          }}
+                        >
+                          {it.target_native}
+                        </div>
+                      ) : null}
+
+                      <div className="muted" style={{ marginTop: it.target_native ? 4 : 0 }}>
+                        {it.target_text}
+                      </div>
+
+                      {it.notes ? (
+                        <div className="small muted" style={{ marginTop: 8 }}>
+                          {it.notes}
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="col" style={{ gap: 8, minWidth: 160 }}>
+                      {it.__kind === "personal" ? (
+                        <>
+                          <button className="btn" onClick={() => edit(it)}>
+                            Edit
+                          </button>
+                          <button className="btn btnDanger" onClick={() => del(it.id)}>
+                            Delete
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          className="btn"
+                          onClick={() => addSharedToMyTerms(it)}
+                          disabled={savingIds.has(it.id)}
+                        >
+                          {savingIds.has(it.id) ? "Saving..." : "Add to My Terms"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
-
-                <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-                  {it.__kind === "personal" ? (
-                    <>
-                      <button className="btn" onClick={() => edit(it)}>Edit</button>
-                      <button className="btn btnDanger" onClick={() => del(it.id)}>Delete</button>
-                    </>
-                  ) : (
-                    <button
-                      className="btn"
-                      onClick={() => addSharedToMyTerms(it)}
-                      disabled={savingIds.has(it.id)}
-                    >
-                      {savingIds.has(it.id) ? "Adding…" : "Add to My Terms"}
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              <div style={{ marginTop: 10, fontWeight: 800 }}>{it.source_text}</div>
-
-              {/* Native first (if exists), then roman */}
-              {it.target_native ? (
-                <div style={{ marginTop: 6, fontSize: 18, lineHeight: 1.3 }}>{it.target_native}</div>
-              ) : null}
-              <div style={{ marginTop: it.target_native ? 4 : 6 }}>{it.target_text}</div>
-
-              {it.notes ? <div className="small muted" style={{ marginTop: 6 }}>{it.notes}</div> : null}
+              ))}
             </div>
-          ))}
+          )}
         </div>
       </div>
     </div>

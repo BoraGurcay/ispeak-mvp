@@ -14,6 +14,7 @@ const LANGUAGE_OPTIONS = [
   { code: "pt", label: "Portuguese (PT)" },
   { code: "hi", label: "Hindi (HI)" },
   { code: "ar", label: "Arabic (AR)" },
+  { code: "zh", label: "Mandarin (ZH)" },
 ];
 
 const DOMAIN_OPTIONS = [
@@ -127,7 +128,7 @@ export default function PlayPage() {
     } catch {}
   }
 
-  // For Arabic (and future), prefer native display if present
+  // Prefer native display if present, otherwise roman text
   function displayForRow(row) {
     const native = (row?.target_native || "").trim();
     const roman = (row?.target_text || "").trim();
@@ -162,7 +163,9 @@ export default function PlayPage() {
           console.error(error);
           setPool([]);
         } else {
-          const cleaned = (data || []).filter((r) => r?.source_text && (r?.target_text || r?.target_native));
+          const cleaned = (data || []).filter(
+            (r) => r?.source_text && ((r?.target_text || "").trim() || (r?.target_native || "").trim())
+          );
           setPool(cleaned);
         }
         setLoading(false);
@@ -182,11 +185,9 @@ export default function PlayPage() {
     if (rows.length < 4) return null;
 
     const correctRow = pickRandom(rows);
-
     const en = String(correctRow.source_text);
     const correctDisplay = displayForRow(correctRow);
 
-    // distractors based on display string
     const distractors = shuffle(
       rows
         .filter((r) => displayForRow(r) && normalizeText(displayForRow(r)) !== normalizeText(correctDisplay))
@@ -194,6 +195,7 @@ export default function PlayPage() {
     ).slice(0, 2);
 
     const optsDisplay = shuffle([correctDisplay, ...distractors]);
+
     return { en, correctDisplay, optsDisplay };
   }
 
@@ -313,15 +315,21 @@ export default function PlayPage() {
             Score: {score}/{total}
           </div>
           <div className="badge">Time: {started && question ? timeLeft : "-"}</div>
-          <button className={"btn " + (soundOn ? "" : "btnDanger")} type="button" onClick={() => setSoundOn((s) => !s)}>
+          <button
+            className={"btn " + (soundOn ? "" : "btnDanger")}
+            type="button"
+            onClick={() => setSoundOn((s) => !s)}
+          >
             Sound: {soundOn ? "On" : "Off"}
           </button>
         </div>
 
         <div className="row" style={{ marginTop: 12, gap: 12, flexWrap: "wrap" }}>
           <div style={{ minWidth: 220 }}>
-            <label className="small muted">Language</label>
-            <select className="select" value={lang} onChange={(e) => setLang(e.target.value)}>
+            <label className="muted" style={{ display: "block", marginBottom: 6 }}>
+              Language
+            </label>
+            <select className="input" value={lang} onChange={(e) => setLang(e.target.value)}>
               {LANGUAGE_OPTIONS.map((l) => (
                 <option key={l.code} value={l.code}>
                   {l.label}
@@ -331,8 +339,10 @@ export default function PlayPage() {
           </div>
 
           <div style={{ minWidth: 220 }}>
-            <label className="small muted">Domain</label>
-            <select className="select" value={domain} onChange={(e) => setDomain(e.target.value)}>
+            <label className="muted" style={{ display: "block", marginBottom: 6 }}>
+              Domain
+            </label>
+            <select className="input" value={domain} onChange={(e) => setDomain(e.target.value)}>
               {DOMAIN_OPTIONS.map((d) => (
                 <option key={d.value} value={d.value}>
                   {d.label}
@@ -340,63 +350,79 @@ export default function PlayPage() {
               ))}
             </select>
           </div>
-
-          <div className="row" style={{ alignItems: "flex-end", gap: 10, flexWrap: "wrap" }}>
-            {!started ? (
-              <button className="btn btnPrimary" type="button" disabled={!canPlay || loading} onClick={unlockAudioAndStart}>
-                {loading ? "Loading…" : canPlay ? (audioReady ? "Start" : "Start") : "Not enough terms"}
-              </button>
-            ) : (
-              <>
-                <button className="btn" type="button" onClick={resetGame}>Reset</button>
-              </>
-            )}
-          </div>
         </div>
-      </div>
 
-      <div style={{ height: 12 }} />
+        <div className="row" style={{ marginTop: 12, gap: 10, flexWrap: "wrap" }}>
+          {!started ? (
+            <button className="btn btnPrimary" type="button" onClick={unlockAudioAndStart}>
+              Start
+            </button>
+          ) : (
+            <button className="btn" type="button" onClick={resetGame}>
+              Reset
+            </button>
+          )}
+        </div>
 
-      <div className="card">
-        {loading ? <div className="muted">Loading…</div> : null}
-        {!loading && !canPlay ? <div className="muted">Need at least 4 terms for this language/domain.</div> : null}
-
-        {started && question ? (
-          <>
-            <div style={{ fontSize: 22, fontWeight: 800, marginTop: 6 }}>{question.en}</div>
-
-            {statusText ? (
-              <div className="small muted" style={{ marginTop: 8 }}>
-                {statusText}
-              </div>
-            ) : null}
-
-            <div className="col" style={{ marginTop: 12, gap: 10 }}>
-              {options.map((opt) => {
-                const isChosen = selected && normalizeText(opt) === normalizeText(selected);
-                const isCorrect = reveal && normalizeText(opt) === normalizeText(question.correctDisplay);
-                const className =
-                  "btn " +
-                  (reveal && isCorrect ? "btnPrimary" : "") +
-                  (reveal && isChosen && !isCorrect ? "btnDanger" : "");
-
-                return (
-                  <button
-                    key={opt}
-                    className={className}
-                    type="button"
-                    onClick={() => choose(opt)}
-                    disabled={!started || reveal}
-                  >
-                    {opt}
-                  </button>
-                );
-              })}
+        <div style={{ marginTop: 16 }}>
+          {loading ? (
+            <div className="small muted">Loading...</div>
+          ) : !canPlay ? (
+            <div className="small muted">
+              Not enough terms to play in this language/domain yet. You need at least 4.
             </div>
-          </>
-        ) : (
-          <div className="muted">Press Start to begin.</div>
-        )}
+          ) : !started ? (
+            <div className="small muted">
+              Press Start to begin. For Arabic, Hindi, and Mandarin, the choices show native script when available.
+            </div>
+          ) : question ? (
+            <div className="card" style={{ marginTop: 8 }}>
+              <div className="small muted" style={{ marginBottom: 8 }}>
+                Choose the correct translation for:
+              </div>
+
+              <div className="h1" style={{ marginBottom: 14 }}>
+                {question.en}
+              </div>
+
+              <div className="col" style={{ gap: 10 }}>
+                {options.map((opt, idx) => {
+                  const isCorrect = normalizeText(opt) === normalizeText(question.correctDisplay);
+                  const isSelected = normalizeText(opt) === normalizeText(selected);
+                  const showAsCorrect = reveal && isCorrect;
+                  const showAsWrong = reveal && isSelected && !isCorrect;
+
+                  let className = "btn";
+                  if (showAsCorrect) className = "btn btnPrimary";
+                  if (showAsWrong) className = "btn btnDanger";
+
+                  return (
+                    <button
+                      key={`${opt}-${idx}`}
+                      className={className}
+                      type="button"
+                      onClick={() => choose(opt)}
+                      disabled={reveal}
+                      style={{
+                        textAlign: "left",
+                        justifyContent: "flex-start",
+                        direction: lang === "ar" ? "rtl" : "auto",
+                      }}
+                    >
+                      {opt}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {reveal ? (
+                <div style={{ marginTop: 12 }} className="small muted">
+                  {statusText}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   );

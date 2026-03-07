@@ -22,19 +22,17 @@ function stripDiacritics(s) {
 
 /**
 * Forgiving normalization that works for:
-* - Latin scripts (tr/fr/es/pt)
+* - Latin scripts
 * - Roman Arabic with digits (3/7)
-* - Native scripts like Arabic (keeps Unicode letters)
-*
-* Key idea: DO NOT restrict to [a-z]. Keep \p{L} (letters) + \p{N} (numbers).
+* - Native scripts like Arabic / Hindi / Mandarin
 */
 function normalizeAnswer(s) {
   return stripDiacritics(stripBracketed(s))
     .toLowerCase()
     .replace(/[’‘´`]/g, "'")
     .replace(/[\u2010-\u2015\u2212\-]/g, " ")
-    .replace(/'/g, "") // isti'naf == istinaf
-    .replace(/[^\p{L}\p{N}\s]/gu, " ") // keep letters+numbers across languages
+    .replace(/'/g, "")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -54,7 +52,6 @@ function termKey(it) {
 
 /**
 * Split acceptable answers from a field that may include alternatives.
-* Conservative split: / | ; newline OR words "veya"/"or"
 */
 function splitExpectedAnswers(expectedRaw) {
   const raw = (expectedRaw || "").toString().trim();
@@ -99,6 +96,7 @@ const LANGUAGES = [
   { value: "pt", label: "Portuguese (PT)" },
   { value: "hi", label: "Hindi (HI)" },
   { value: "ar", label: "Arabic (AR)" },
+  { value: "zh", label: "Mandarin (ZH)" },
 ];
 
 const DOMAINS = [
@@ -125,7 +123,7 @@ export default function PracticePage() {
 
   const [answer, setAnswer] = useState("");
 
-  // feedback: { ok, accepted, matched, showExpectedNative?, expectedNative? }
+  // feedback: { ok, accepted, matched, expectedNative }
   const [feedback, setFeedback] = useState(null);
 
   const [score, setScore] = useState(0);
@@ -165,7 +163,9 @@ export default function PracticePage() {
   // load saved language
   useEffect(() => {
     const saved = localStorage.getItem("ispeak_target_lang");
-    if (saved && ["tr", "fr", "es", "pt", "hi", "ar"].includes(saved)) setLang(saved);
+    if (saved && ["tr", "fr", "es", "pt", "hi", "ar", "zh"].includes(saved)) {
+      setLang(saved);
+    }
   }, []);
 
   useEffect(() => {
@@ -178,10 +178,12 @@ export default function PracticePage() {
     setFatalError(null);
 
     try {
-      // 1) shared
+      // shared
       let sharedQuery = supabase
         .from("terms")
-        .select("id,domain,source_text,target_text,target_native,source_lang,target_lang,difficulty")
+        .select(
+          "id,domain,source_text,target_text,target_native,source_lang,target_lang,difficulty"
+        )
         .eq("source_lang", "en")
         .eq("target_lang", lang)
         .limit(5000);
@@ -200,7 +202,7 @@ export default function PracticePage() {
 
       const shared = (sharedRes.data || []).map((t) => ({ ...t, __kind: "shared" }));
 
-      // 2) personal (if logged in)
+      // personal
       let personal = [];
       const { data: userRes } = await supabase.auth.getUser();
       const user = userRes?.user;
@@ -208,7 +210,9 @@ export default function PracticePage() {
       if (user) {
         let personalQuery = supabase
           .from("user_terms")
-          .select("id,domain,source_text,target_text,target_native,source_lang,target_lang,difficulty,created_at")
+          .select(
+            "id,domain,source_text,target_text,target_native,source_lang,target_lang,difficulty,created_at"
+          )
           .eq("user_id", user.id)
           .eq("source_lang", "en")
           .eq("target_lang", lang)
@@ -237,7 +241,7 @@ export default function PracticePage() {
           t &&
           t.source_lang === "en" &&
           t.target_lang === lang &&
-          (t.target_text || "").trim().length > 0
+          ((t.target_text || "").trim().length > 0 || (t.target_native || "").trim().length > 0)
       );
 
       let filtered = merged;
@@ -282,12 +286,10 @@ export default function PracticePage() {
     const romanRaw = term.target_text || "";
     const nativeRaw = term.target_native || "";
 
-    // roman alternatives
     const romanAcceptedRaw = splitExpectedAnswers(romanRaw);
     const romanAcceptedNorm = romanAcceptedRaw.map((x) => normalizeAnswer(x)).filter(Boolean);
     const romanWholeNorm = normalizeAnswer(romanRaw);
 
-    // native alternatives (usually single, but allow separators just in case)
     const nativeAcceptedRaw = splitExpectedAnswers(nativeRaw);
     const nativeAcceptedNorm = nativeAcceptedRaw.map((x) => normalizeAnswer(x)).filter(Boolean);
     const nativeWholeNorm = normalizeAnswer(nativeRaw);
@@ -298,16 +300,17 @@ export default function PracticePage() {
       (nativeAcceptedNorm.length > 0 && nativeAcceptedNorm.includes(userNorm)) ||
       (nativeWholeNorm && userNorm === nativeWholeNorm);
 
-    // Build accepted list for display (roman + native, de-duped)
     const acceptedCombined = uniqByNorm([...romanAcceptedRaw, ...nativeAcceptedRaw]);
 
     let matched = null;
     if (ok) {
-      const idxR = romanAcceptedNorm.indexOf(userNorm);
-      if (idxR >= 0) matched = romanAcceptedRaw[idxR] || null;
-      const idxN = nativeAcceptedNorm.indexOf(userNorm);
-      if (!matched && idxN >= 0) matched = nativeAcceptedRaw[idxN] || null;
-      if (!matched) matched = romanRaw || nativeRaw || null;
+      const romanIdx = romanAcceptedNorm.indexOf(userNorm);
+      const nativeIdx = nativeAcceptedNorm.indexOf(userNorm);
+
+      if (romanIdx >= 0) matched = romanAcceptedRaw[romanIdx] || null;
+      else if (nativeIdx >= 0) matched = nativeAcceptedRaw[nativeIdx] || null;
+      else if (userNorm === romanWholeNorm) matched = romanRaw || null;
+      else if (userNorm === nativeWholeNorm) matched = nativeRaw || null;
     }
 
     playSound(ok);
@@ -317,6 +320,7 @@ export default function PracticePage() {
         ok: true,
         accepted: acceptedCombined,
         matched,
+        expectedNative: nativeRaw || null,
       });
       setScore((s) => s + 1);
       setStreak((s) => s + 1);
@@ -325,6 +329,7 @@ export default function PracticePage() {
         ok: false,
         accepted: acceptedCombined,
         matched: null,
+        expectedNative: nativeRaw || null,
       });
       setStreak(0);
     }
@@ -334,27 +339,30 @@ export default function PracticePage() {
     return LANGUAGES.find((l) => l.value === lang)?.label || lang;
   }, [lang]);
 
-  const poolCount = pool.length;
-
   return (
     <div className="container">
       <div className="card">
-        <div className="h1">Practice</div>
+        <h1>Practice</h1>
 
-        {/* Controls */}
-        <label className="small muted">Language</label>
-        <select className="select" value={lang} onChange={(e) => setLang(e.target.value)}>
-          {LANGUAGES.map((l) => (
-            <option key={l.value} value={l.value}>
-              {l.label}
-            </option>
-          ))}
-        </select>
+        <div className="row" style={{ gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+          <div style={{ minWidth: 180 }}>
+            <div className="muted" style={{ marginBottom: 6 }}>
+              Language
+            </div>
+            <select className="input" value={lang} onChange={(e) => setLang(e.target.value)}>
+              {LANGUAGES.map((l) => (
+                <option key={l.value} value={l.value}>
+                  {l.label}
+                </option>
+              ))}
+            </select>
+          </div>
 
-        <div className="row" style={{ marginTop: 10, gap: 10, flexWrap: "wrap" }}>
-          <div style={{ flex: 1, minWidth: 220 }}>
-            <label className="small muted">Domain</label>
-            <select className="select" value={domain} onChange={(e) => setDomain(e.target.value)}>
+          <div style={{ minWidth: 180 }}>
+            <div className="muted" style={{ marginBottom: 6 }}>
+              Domain
+            </div>
+            <select className="input" value={domain} onChange={(e) => setDomain(e.target.value)}>
               {DOMAINS.map((d) => (
                 <option key={d.value} value={d.value}>
                   {d.label}
@@ -362,95 +370,123 @@ export default function PracticePage() {
               ))}
             </select>
           </div>
-
-          <div style={{ minWidth: 220 }}>
-            <label className="small muted">Mode</label>
-            <div className="row" style={{ gap: 10 }}>
-              <button
-                className={"btn " + (mode === "normal" ? "btnPrimary" : "")}
-                onClick={() => setMode("normal")}
-                type="button"
-              >
-                Normal
-              </button>
-              <button
-                className={"btn " + (mode === "hard" ? "btnPrimary" : "")}
-                onClick={() => setMode("hard")}
-                type="button"
-              >
-                Hard
-              </button>
-            </div>
-          </div>
         </div>
 
-        <div className="row" style={{ marginTop: 10, gap: 10, flexWrap: "wrap" }}>
-          <div className="badge">Score: {score}</div>
-          <div className="badge">Streak: {streak}</div>
-          <div className="badge">Pool: {poolCount}</div>
-          <button className={"btn " + (soundOn ? "" : "btnDanger")} type="button" onClick={() => setSoundOn((s) => !s)}>
-            Sound: {soundOn ? "On" : "Off"}
+        <div className="row" style={{ gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+          <button
+            type="button"
+            className={`btn ${mode === "normal" ? "btnPrimary" : ""}`}
+            onClick={() => setMode("normal")}
+          >
+            Normal
           </button>
+
+          <button
+            type="button"
+            className={`btn ${mode === "hard" ? "btnPrimary" : ""}`}
+            onClick={() => setMode("hard")}
+          >
+            Hard Words
+          </button>
+
+          <label className="btn" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input
+              type="checkbox"
+              checked={soundOn}
+              onChange={(e) => setSoundOn(e.target.checked)}
+            />
+            Sound
+          </label>
+
+          <div className="muted" style={{ marginLeft: "auto" }}>
+            Score: {score}
+          </div>
+
+          <div className="muted">Streak: {streak}</div>
         </div>
-      </div>
 
-      <div style={{ height: 12 }} />
+        {fatalError ? (
+          <div className="muted">{fatalError}</div>
+        ) : loading ? (
+          <div className="muted">Loading...</div>
+        ) : !term ? (
+          <div className="muted">
+            No terms found for {selectedLangLabel}
+            {domain !== "all" ? ` in ${domainLabel(domain)}` : ""}.
+          </div>
+        ) : (
+          <div className="card">
+            <div className="small muted" style={{ marginBottom: 8 }}>
+              Domain: {domainLabel(term.domain)} · Difficulty: {term.difficulty ?? 1}
+            </div>
 
-      <div className="card">
-        {loading ? <div className="muted">Loading…</div> : null}
-        {fatalError ? <div className="muted">{fatalError}</div> : null}
-
-        {!loading && !fatalError && !term ? (
-          <div className="muted">No terms found for {selectedLangLabel} / {domainLabel(domain)}.</div>
-        ) : null}
-
-        {term ? (
-          <>
-            <div style={{ fontSize: 22, fontWeight: 800, marginTop: 6 }}>{term.source_text}</div>
-            <div className="small muted" style={{ marginTop: 6 }}>
-              Domain: {domainLabel(term.domain)} · {term.__kind === "shared" ? "Shared" : "My term"}
+            <div className="h1" style={{ marginBottom: 14 }}>
+              {term.source_text}
             </div>
 
             <input
               ref={inputRef}
               className="input"
-              style={{ marginTop: 12 }}
-              placeholder="Type translation… (native script OR roman accepted)"
               value={answer}
               onChange={(e) => setAnswer(e.target.value)}
+              placeholder={`Type the ${selectedLangLabel} translation...`}
               onKeyDown={(e) => {
                 if (e.key === "Enter") checkAnswer();
               }}
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
             />
 
-            <div className="row" style={{ gap: 10, marginTop: 12, flexWrap: "wrap" }}>
-              <button className="btn btnPrimary" onClick={checkAnswer} type="button">
+            <div className="row" style={{ gap: 10, marginTop: 12 }}>
+              <button className="btn btnPrimary" onClick={checkAnswer}>
                 Check
               </button>
-              <button className="btn" onClick={nextTerm} type="button">
+              <button className="btn" onClick={nextTerm}>
                 Next
               </button>
             </div>
 
             {feedback ? (
-              <div style={{ marginTop: 12 }}>
-                <div className="small muted">{feedback.ok ? "✅ Correct!" : "❌ Not quite."}</div>
+              <div style={{ marginTop: 14 }}>
+                {feedback.ok ? (
+                  <div>
+                    <div style={{ fontWeight: 700 }}>Correct ✓</div>
 
-                {feedback.accepted && feedback.accepted.length ? (
-                  <div className="small muted" style={{ marginTop: 6 }}>
-                    Accepted:{" "}
-                    {feedback.accepted.map((a, i) => (
-                      <span key={i} style={{ fontWeight: feedback.matched === a ? 800 : 400 }}>
-                        {a}
-                        {i < feedback.accepted.length - 1 ? " · " : ""}
-                      </span>
-                    ))}
+                    {feedback.matched ? (
+                      <div className="muted" style={{ marginTop: 6 }}>
+                        Accepted: {feedback.matched}
+                      </div>
+                    ) : null}
+
+                    {feedback.expectedNative &&
+                    normalizeAnswer(feedback.expectedNative) !== normalizeAnswer(feedback.matched) ? (
+                      <div
+                        style={{
+                          marginTop: 4,
+                          direction: lang === "ar" ? "rtl" : "auto",
+                        }}
+                        className="muted"
+                      >
+                        Native: {feedback.expectedNative}
+                      </div>
+                    ) : null}
                   </div>
-                ) : null}
+                ) : (
+                  <div>
+                    <div style={{ fontWeight: 700 }}>Not quite</div>
+
+                    {feedback.accepted?.length ? (
+                      <div className="muted" style={{ marginTop: 6 }}>
+                        Accepted answers: {feedback.accepted.join(" / ")}
+                      </div>
+                    ) : null}
+                  </div>
+                )}
               </div>
             ) : null}
-          </>
-        ) : null}
+          </div>
+        )}
       </div>
     </div>
   );
