@@ -69,7 +69,7 @@ export default function PlayPage() {
   const [started, setStarted] = useState(false);
   const [sessionEnded, setSessionEnded] = useState(false);
 
-  const [question, setQuestion] = useState(null); // { en, correctDisplay, optsDisplay }
+  const [question, setQuestion] = useState(null);
   const [options, setOptions] = useState([]);
   const [selected, setSelected] = useState(null);
   const [reveal, setReveal] = useState(false);
@@ -78,6 +78,7 @@ export default function PlayPage() {
   const [total, setTotal] = useState(0);
   const [statusText, setStatusText] = useState("");
   const [mistakes, setMistakes] = useState([]);
+  const [savingSession, setSavingSession] = useState(false);
 
   const timerRef = useRef(null);
   const advanceRef = useRef(null);
@@ -318,7 +319,36 @@ export default function PlayPage() {
     startRound();
   }
 
-  function endSession() {
+  async function saveSessionHistory() {
+    try {
+      setSavingSession(true);
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) return;
+
+      const { error } = await supabase.from("play_sessions").insert({
+        user_id: user.id,
+        language: lang,
+        domain,
+        correct_count: score,
+        attempted_count: total,
+        accuracy,
+      });
+
+      if (error) {
+        console.error("Error saving play session:", error);
+      }
+    } catch (err) {
+      console.error("Unexpected save session error:", err);
+    } finally {
+      setSavingSession(false);
+    }
+  }
+
+  async function endSession() {
     stopAllTimers();
     stopTick();
     setSessionEnded(true);
@@ -328,6 +358,10 @@ export default function PlayPage() {
     setReveal(false);
     setStatusText("");
     setTimeLeft(ROUND_SECONDS);
+
+    if (total > 0) {
+      await saveSessionHistory();
+    }
   }
 
   function resetGame() {
@@ -465,6 +499,12 @@ export default function PlayPage() {
                 <div className="badge">Attempted: {total}</div>
                 <div className="badge">Accuracy: {accuracy}%</div>
               </div>
+
+              {savingSession ? (
+                <div className="small muted" style={{ marginTop: 10 }}>
+                  Saving session...
+                </div>
+              ) : null}
 
               <div className="small muted" style={{ marginTop: 14 }}>
                 Great work. Keep building speed and recall.
