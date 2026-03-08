@@ -50,6 +50,14 @@ function normalizeText(s) {
     .trim();
 }
 
+function domainLabel(value) {
+  return DOMAIN_OPTIONS.find((d) => d.value === value)?.label || value;
+}
+
+function languageLabel(value) {
+  return LANGUAGE_OPTIONS.find((l) => l.code === value)?.label || value;
+}
+
 export default function PlayPage() {
   const [lang, setLang] = useState("tr");
   const [domain, setDomain] = useState("court");
@@ -59,6 +67,8 @@ export default function PlayPage() {
   const [pool, setPool] = useState([]);
 
   const [started, setStarted] = useState(false);
+  const [sessionEnded, setSessionEnded] = useState(false);
+
   const [question, setQuestion] = useState(null); // { en, correctDisplay, optsDisplay }
   const [options, setOptions] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -128,7 +138,6 @@ export default function PlayPage() {
     } catch {}
   }
 
-  // Prefer native display if present, otherwise roman text
   function displayForRow(row) {
     const native = (row?.target_native || "").trim();
     const roman = (row?.target_text || "").trim();
@@ -181,6 +190,8 @@ export default function PlayPage() {
 
   const canPlay = useMemo(() => pool.length >= 4, [pool.length]);
 
+  const accuracy = total > 0 ? Math.round((score / total) * 100) : 0;
+
   function makeQuestion(rows) {
     if (rows.length < 4) return null;
 
@@ -227,6 +238,7 @@ export default function PlayPage() {
     if (!started) return;
     if (!question) return;
     if (reveal) return;
+    if (sessionEnded) return;
 
     if (timeLeft <= 0) {
       stopAllTimers();
@@ -240,11 +252,12 @@ export default function PlayPage() {
       advanceRef.current = setTimeout(() => startRound(), AUTO_ADVANCE_MS);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeLeft, started, question, reveal]);
+  }, [timeLeft, started, question, reveal, sessionEnded]);
 
   function choose(opt) {
     if (!question) return;
     if (reveal) return;
+    if (sessionEnded) return;
 
     stopAllTimers();
     stopTick();
@@ -281,14 +294,28 @@ export default function PlayPage() {
     audioReadyRef.current = true;
     setAudioReady(true);
 
+    setSessionEnded(false);
     setStarted(true);
     startRound();
+  }
+
+  function endSession() {
+    stopAllTimers();
+    stopTick();
+    setSessionEnded(true);
+    setQuestion(null);
+    setOptions([]);
+    setSelected(null);
+    setReveal(false);
+    setStatusText("");
+    setTimeLeft(ROUND_SECONDS);
   }
 
   function resetGame() {
     stopAllTimers();
     stopTick();
     setStarted(false);
+    setSessionEnded(false);
     setQuestion(null);
     setOptions([]);
     setSelected(null);
@@ -297,6 +324,21 @@ export default function PlayPage() {
     setScore(0);
     setTotal(0);
     setStatusText("");
+  }
+
+  function practiceAgain() {
+    stopAllTimers();
+    stopTick();
+    setScore(0);
+    setTotal(0);
+    setStatusText("");
+    setSelected(null);
+    setReveal(false);
+    setQuestion(null);
+    setOptions([]);
+    setSessionEnded(false);
+    setStarted(true);
+    startRound();
   }
 
   useEffect(() => {
@@ -311,10 +353,8 @@ export default function PlayPage() {
         <div className="small muted">Pick the correct translation before the timer runs out.</div>
 
         <div className="row" style={{ marginTop: 10, gap: 10, flexWrap: "wrap" }}>
-          <div className="badge">
-            Score: {score}/{total}
-          </div>
-          <div className="badge">Time: {started && question ? timeLeft : "-"}</div>
+          <div className="badge">Score: {score}/{total}</div>
+          <div className="badge">Time: {started && question && !sessionEnded ? timeLeft : "-"}</div>
           <button
             className={"btn " + (soundOn ? "" : "btnDanger")}
             type="button"
@@ -357,10 +397,24 @@ export default function PlayPage() {
             <button className="btn btnPrimary" type="button" onClick={unlockAudioAndStart}>
               Start
             </button>
+          ) : sessionEnded ? (
+            <>
+              <button className="btn btnPrimary" type="button" onClick={practiceAgain}>
+                Practice Again
+              </button>
+              <button className="btn" type="button" onClick={resetGame}>
+                Reset
+              </button>
+            </>
           ) : (
-            <button className="btn" type="button" onClick={resetGame}>
-              Reset
-            </button>
+            <>
+              <button className="btn" type="button" onClick={endSession}>
+                End Session
+              </button>
+              <button className="btn" type="button" onClick={resetGame}>
+                Reset
+              </button>
+            </>
           )}
         </div>
 
@@ -374,6 +428,38 @@ export default function PlayPage() {
           ) : !started ? (
             <div className="small muted">
               Press Start to begin. For Arabic, Hindi, and Mandarin, the choices show native script when available.
+            </div>
+          ) : sessionEnded ? (
+            <div className="card" style={{ marginTop: 8 }}>
+              <div className="h1" style={{ marginBottom: 12 }}>
+                Session Complete
+              </div>
+
+              <div className="small muted" style={{ marginBottom: 12 }}>
+                {languageLabel(lang)} • {domainLabel(domain)}
+              </div>
+
+              <div className="col" style={{ gap: 8 }}>
+                <div className="badge">Correct: {score}</div>
+                <div className="badge">Attempted: {total}</div>
+                <div className="badge">Accuracy: {accuracy}%</div>
+              </div>
+
+              <div className="small muted" style={{ marginTop: 14 }}>
+                Great work. Keep building speed and recall.
+              </div>
+
+              <div className="row" style={{ marginTop: 14, gap: 10, flexWrap: "wrap" }}>
+                <button className="btn btnPrimary" type="button" onClick={practiceAgain}>
+                  Practice Again
+                </button>
+                <button className="btn" type="button" onClick={resetGame}>
+                  Reset
+                </button>
+                <a href="/home" className="btn">
+                  Home
+                </a>
+              </div>
             </div>
           ) : question ? (
             <div className="card" style={{ marginTop: 8 }}>
