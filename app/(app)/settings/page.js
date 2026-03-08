@@ -22,7 +22,6 @@ export default function SettingsPage() {
   return (
     <div className="container">
       <div className="card">
-
         <div className="h1">Settings</div>
 
         <label className="small muted">Text size</label>
@@ -41,13 +40,26 @@ export default function SettingsPage() {
         <div className="hr" />
 
         <div className="small muted">
-          Language pair: EN ↔ TR (more languages coming soon)
+          Professional interpreter training platform
+        </div>
+
+        <div className="small muted" style={{ marginTop: 6 }}>
+          Languages: Turkish, French, Spanish, Portuguese, Hindi, Arabic, Mandarin
+        </div>
+
+        <div className="hr" />
+
+        <a href="/feedback" className="btn">
+          Send Feedback
+        </a>
+
+        <div className="small muted" style={{ marginTop: 8 }}>
+          Share ideas, report issues, or suggest new features.
         </div>
 
         <div className="hr" />
 
         <PushTestButton />
-
       </div>
     </div>
   );

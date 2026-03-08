@@ -1,11 +1,12 @@
 import "./globals.css";
 import ServiceWorkerRegister from "./ServiceWorkerRegister";
+import { Analytics } from "@vercel/analytics/react";
 
 const ASSET_VERSION = "v5"; // bump this anytime you change icons/manifest
 
 export const metadata = {
   title: "iSpeak",
-  description: "Interpreter practice + personal glossary",
+  description: "Professional interpreter training platform",
   manifest: `/manifest.webmanifest?${ASSET_VERSION}`,
   themeColor: "#ffffff",
   icons: {
@@ -23,6 +24,7 @@ export default function RootLayout({ children }) {
       <body>
         <ServiceWorkerRegister version={ASSET_VERSION} />
         {children}
+        <Analytics />
       </body>
     </html>
   );

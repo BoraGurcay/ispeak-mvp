@@ -3,6 +3,23 @@
 import { useMemo, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 
+function getURL() {
+  let url =
+    process?.env?.NEXT_PUBLIC_SITE_URL ||
+    process?.env?.NEXT_PUBLIC_VERCEL_URL ||
+    "http://localhost:3000";
+
+  if (!url.startsWith("http")) {
+    url = `https://${url}`;
+  }
+
+  if (!url.endsWith("/")) {
+    url = `${url}/`;
+  }
+
+  return url;
+}
+
 export default function Login() {
   const [mode, setMode] = useState("login"); // login | signup
   const [email, setEmail] = useState("");
@@ -25,6 +42,9 @@ export default function Login() {
         response = await supabase.auth.signUp({
           email,
           password,
+          options: {
+            emailRedirectTo: `${getURL()}home`,
+          },
         });
       } else {
         response = await supabase.auth.signInWithPassword({
@@ -40,7 +60,6 @@ export default function Login() {
         return;
       }
 
-      // if email confirmation is required
       if (mode === "signup" && !data.session) {
         setStatus("Check your email to confirm your account.");
         return;
@@ -59,13 +78,14 @@ export default function Login() {
         <div className="h1">iSpeak</div>
 
         <div className="muted" style={{ marginBottom: 12 }}>
-          Simple practice + personal glossary (EN ↔ TR)
+          Professional interpreter training platform
         </div>
 
         <div className="row" style={{ marginBottom: 12 }}>
           <button
             className={"btn " + (mode === "login" ? "btnPrimary" : "")}
             onClick={() => setMode("login")}
+            type="button"
           >
             Log in
           </button>
@@ -73,6 +93,7 @@ export default function Login() {
           <button
             className={"btn " + (mode === "signup" ? "btnPrimary" : "")}
             onClick={() => setMode("signup")}
+            type="button"
           >
             Sign up
           </button>
@@ -82,6 +103,7 @@ export default function Login() {
           <input
             className="input"
             placeholder="Email"
+            type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
