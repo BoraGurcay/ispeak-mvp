@@ -77,6 +77,7 @@ export default function PlayPage() {
   const [score, setScore] = useState(0);
   const [total, setTotal] = useState(0);
   const [statusText, setStatusText] = useState("");
+  const [mistakes, setMistakes] = useState([]);
 
   const timerRef = useRef(null);
   const advanceRef = useRef(null);
@@ -86,7 +87,6 @@ export default function PlayPage() {
   const tickAudioRef = useRef(null);
 
   const audioReadyRef = useRef(false);
-  const [audioReady, setAudioReady] = useState(false);
 
   useEffect(() => {
     correctAudioRef.current = new Audio("/sounds/correct.mp3");
@@ -189,7 +189,6 @@ export default function PlayPage() {
   }, [lang, domain]);
 
   const canPlay = useMemo(() => pool.length >= 4, [pool.length]);
-
   const accuracy = total > 0 ? Math.round((score / total) * 100) : 0;
 
   function makeQuestion(rows) {
@@ -249,6 +248,16 @@ export default function PlayPage() {
       setStatusText("Time’s up ⏱️");
       playSound("wrong");
 
+      setMistakes((prev) => [
+        ...prev,
+        {
+          en: question.en,
+          correctDisplay: question.correctDisplay,
+          selected: null,
+          reason: "timeout",
+        },
+      ]);
+
       advanceRef.current = setTimeout(() => startRound(), AUTO_ADVANCE_MS);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -275,6 +284,16 @@ export default function PlayPage() {
     } else {
       setStatusText("Wrong ❌");
       playSound("wrong");
+
+      setMistakes((prev) => [
+        ...prev,
+        {
+          en: question.en,
+          correctDisplay: question.correctDisplay,
+          selected: opt,
+          reason: "wrong",
+        },
+      ]);
     }
 
     advanceRef.current = setTimeout(() => startRound(), AUTO_ADVANCE_MS);
@@ -292,8 +311,8 @@ export default function PlayPage() {
     } catch {}
 
     audioReadyRef.current = true;
-    setAudioReady(true);
 
+    setMistakes([]);
     setSessionEnded(false);
     setStarted(true);
     startRound();
@@ -324,6 +343,7 @@ export default function PlayPage() {
     setScore(0);
     setTotal(0);
     setStatusText("");
+    setMistakes([]);
   }
 
   function practiceAgain() {
@@ -337,6 +357,7 @@ export default function PlayPage() {
     setQuestion(null);
     setOptions([]);
     setSessionEnded(false);
+    setMistakes([]);
     setStarted(true);
     startRound();
   }
@@ -448,6 +469,35 @@ export default function PlayPage() {
               <div className="small muted" style={{ marginTop: 14 }}>
                 Great work. Keep building speed and recall.
               </div>
+
+              {mistakes.length > 0 ? (
+                <div className="card" style={{ marginTop: 16 }}>
+                  <div className="h1" style={{ fontSize: "1.4rem", marginBottom: 10 }}>
+                    Review Mistakes
+                  </div>
+
+                  <div className="col" style={{ gap: 10 }}>
+                    {mistakes.map((m, idx) => (
+                      <div key={`${m.en}-${idx}`} className="card" style={{ padding: 12 }}>
+                        <div className="small muted" style={{ marginBottom: 6 }}>
+                          {m.reason === "timeout" ? "Time ran out" : "Incorrect answer"}
+                        </div>
+                        <div style={{ fontWeight: 700, marginBottom: 6 }}>{m.en}</div>
+                        <div className="small">
+                          <strong>Correct:</strong> {m.correctDisplay}
+                        </div>
+                        <div className="small muted" style={{ marginTop: 4 }}>
+                          <strong>Your answer:</strong> {m.selected || "—"}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="small muted" style={{ marginTop: 16 }}>
+                  No mistakes this session. Excellent work.
+                </div>
+              )}
 
               <div className="row" style={{ marginTop: 14, gap: 10, flexWrap: "wrap" }}>
                 <button className="btn btnPrimary" type="button" onClick={practiceAgain}>
