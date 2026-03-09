@@ -19,7 +19,6 @@ const languages = [
   { value: "zh", label: "Mandarin (ZH)" },
 ];
 
-// languages that support native script display / input
 const LANGS_WITH_NATIVE = new Set(["ar", "hi", "zh"]);
 
 function domainLabel(value) {
@@ -99,7 +98,6 @@ function targetNativePlaceholder(targetLang) {
   }
 }
 
-// Split target strings with obvious separators only
 function splitTargets(raw) {
   const s = (raw || "").toString().trim();
   if (!s) return [];
@@ -271,7 +269,6 @@ export default function Glossary() {
       __kind: "personal",
     }));
 
-    // personal overrides shared for same English/domain/lang
     const personalKeyNoKind = (it) =>
       `${normalizeKey(it.domain)}|${normalizeKey(it.source_text)}|${normalizeKey(
         it.target_lang || targetLang
@@ -401,7 +398,20 @@ export default function Glossary() {
   return (
     <div className="container">
       <div className="card">
-        <h1>Glossary</h1>
+        <div className="h1">Glossary</div>
+        <div
+          className="small muted"
+          style={{ marginTop: 6, lineHeight: 1.6, maxWidth: 620 }}
+        >
+          Browse shared terminology, save important terms to My Terms, and build a
+          personal glossary by domain and language.
+        </div>
+
+        <div className="hr" />
+
+        <div className="h2" style={{ marginBottom: 10 }}>
+          Add or Edit Term
+        </div>
 
         <form onSubmit={upsert} className="col" style={{ gap: 12 }}>
           <label>
@@ -442,7 +452,7 @@ export default function Glossary() {
 
           <label>
             <div className="muted" style={{ marginBottom: 6 }}>
-              English
+              English Term
             </div>
             <input
               className="input"
@@ -464,7 +474,7 @@ export default function Glossary() {
             />
           </label>
 
-          {usesNative && (
+          {usesNative ? (
             <label>
               <div className="muted" style={{ marginBottom: 6 }}>
                 {targetNativeLabel(targetLang)}
@@ -477,11 +487,11 @@ export default function Glossary() {
                 dir={targetLang === "ar" ? "rtl" : "auto"}
               />
             </label>
-          )}
+          ) : null}
 
           <label>
             <div className="muted" style={{ marginBottom: 6 }}>
-              Notes (optional)
+              Notes
             </div>
             <input
               className="input"
@@ -492,7 +502,7 @@ export default function Glossary() {
           </label>
 
           <button className="btn btnPrimary" type="submit">
-            {form.id ? "Save term" : "Add term"}
+            {form.id ? "Save Term" : "Add Term"}
           </button>
 
           {form.id ? (
@@ -510,7 +520,7 @@ export default function Glossary() {
                 })
               }
             >
-              Cancel edit
+              Cancel Edit
             </button>
           ) : null}
 
@@ -521,6 +531,10 @@ export default function Glossary() {
       <div style={{ height: 12 }} />
 
       <div className="card">
+        <div className="h2" style={{ marginBottom: 10 }}>
+          Browse Terms
+        </div>
+
         <div className="col" style={{ gap: 12 }}>
           <input
             className="input"
@@ -534,7 +548,7 @@ export default function Glossary() {
             value={domainFilter}
             onChange={(e) => setDomainFilter(e.target.value)}
           >
-            <option value="all">All domains</option>
+            <option value="all">All Domains</option>
             {domains.map((d) => (
               <option key={d.value} value={d.value}>
                 {d.label}
@@ -545,31 +559,37 @@ export default function Glossary() {
           <div className="hr" />
 
           {loading ? (
-            <div className="muted">Loading...</div>
+            <div className="muted">Loading glossary...</div>
           ) : filtered.length === 0 ? (
-            <div className="muted">No terms found.</div>
+            <div className="muted">
+              No terms found for this search. Try another term or domain.
+            </div>
           ) : (
             <div className="col" style={{ gap: 12 }}>
               {filtered.map((it) => (
-                <div key={`${it.__kind}-${it.id}`} className="card">
+                <div key={`${it.__kind}-${it.id}`} className="card" style={{ padding: 14 }}>
                   <div
                     className="row"
-                    style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}
+                    style={{
+                      justifyContent: "space-between",
+                      alignItems: "flex-start",
+                      gap: 12,
+                    }}
                   >
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div className="small muted" style={{ marginBottom: 6 }}>
                         {domainLabel(it.domain)} • {it.__kind === "personal" ? "My Terms" : "Shared"}
                       </div>
 
-                      <div className="h2" style={{ marginBottom: 6 }}>
+                      <div className="h2" style={{ marginBottom: 8 }}>
                         {it.source_text}
                       </div>
 
                       {it.target_native ? (
                         <div
                           style={{
-                            fontSize: 18,
-                            lineHeight: 1.4,
+                            fontSize: 20,
+                            lineHeight: 1.5,
                             direction: it.target_lang === "ar" ? "rtl" : "auto",
                           }}
                         >
@@ -582,7 +602,7 @@ export default function Glossary() {
                       </div>
 
                       {it.notes ? (
-                        <div className="small muted" style={{ marginTop: 8 }}>
+                        <div className="small muted" style={{ marginTop: 8, lineHeight: 1.6 }}>
                           {it.notes}
                         </div>
                       ) : null}
