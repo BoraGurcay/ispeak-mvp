@@ -61,30 +61,62 @@ export default function SettingsPage() {
       <div className="card">
         <div className="h1">Settings</div>
 
-        <label className="small muted">Text size</label>
-        <select
-          className="select"
-          value={textSize}
-          onChange={(e) => {
-            setTextSize(e.target.value);
-            apply(e.target.value);
-          }}
+        <div
+          className="small muted"
+          style={{ marginTop: 6, lineHeight: 1.6, maxWidth: 620 }}
         >
-          <option value="normal">Normal</option>
-          <option value="large">Large</option>
-        </select>
-
-        <div className="hr" />
-
-        <div className="small muted">
-          Language pair training platform for interpreters
+          Manage your learning preferences, notifications, and review your
+          recent training sessions.
         </div>
 
         <div className="hr" />
 
+        {/* DISPLAY */}
+        <div className="h2" style={{ marginBottom: 10 }}>
+          Display
+        </div>
+
+        <label>
+          <div className="small muted" style={{ marginBottom: 6 }}>
+            Text size
+          </div>
+          <select
+            className="input"
+            value={textSize}
+            onChange={(e) => {
+              setTextSize(e.target.value);
+              apply(e.target.value);
+            }}
+          >
+            <option value="normal">Normal</option>
+            <option value="large">Large</option>
+          </select>
+        </label>
+
+        <div className="hr" />
+
+        {/* NOTIFICATIONS */}
+        <div className="h2" style={{ marginBottom: 10 }}>
+          Notifications
+        </div>
+
+        <div className="small muted" style={{ marginBottom: 10 }}>
+          Enable push notifications to receive training reminders.
+        </div>
+
         <PushTestButton />
 
         <div className="hr" />
+
+        {/* FEEDBACK */}
+        <div className="h2" style={{ marginBottom: 10 }}>
+          Feedback
+        </div>
+
+        <div className="small muted" style={{ marginBottom: 10 }}>
+          Help improve iSpeak by reporting issues or suggesting terminology
+          improvements.
+        </div>
 
         <a href="/feedback" className="btn btnPrimary">
           Send Feedback
@@ -92,18 +124,20 @@ export default function SettingsPage() {
 
         <div className="hr" />
 
-        <div className="h1" style={{ fontSize: "1.4rem" }}>
+        {/* TRAINING HISTORY */}
+        <div className="h2" style={{ marginBottom: 10 }}>
           Training History
         </div>
 
         {loadingSessions ? (
-          <div className="small muted">Loading sessions...</div>
+          <div className="small muted">Loading recent sessions...</div>
         ) : sessions.length === 0 ? (
           <div className="small muted">
-            No sessions yet. Try Play mode to start training.
+            No training sessions yet. Start a Play session to begin tracking your
+            progress.
           </div>
         ) : (
-          <div className="col" style={{ gap: 10, marginTop: 10 }}>
+          <div className="col" style={{ gap: 10 }}>
             {sessions.map((s) => {
               const date = new Date(s.created_at).toLocaleString();
 
