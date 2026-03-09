@@ -342,7 +342,16 @@ export default function PracticePage() {
   return (
     <div className="container">
       <div className="card">
-        <h1>Practice</h1>
+        <div className="h1">Practice</div>
+        <div
+          className="small muted"
+          style={{ marginTop: 6, lineHeight: 1.6, maxWidth: 620 }}
+        >
+          Review terminology, type your translation, and check accepted answers in a
+          focused study mode.
+        </div>
+
+        <div className="hr" />
 
         <div className="row" style={{ gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
           <div style={{ minWidth: 180 }}>
@@ -372,13 +381,13 @@ export default function PracticePage() {
           </div>
         </div>
 
-        <div className="row" style={{ gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+        <div className="row" style={{ gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
           <button
             type="button"
             className={`btn ${mode === "normal" ? "btnPrimary" : ""}`}
             onClick={() => setMode("normal")}
           >
-            Normal
+            Standard
           </button>
 
           <button
@@ -386,7 +395,7 @@ export default function PracticePage() {
             className={`btn ${mode === "hard" ? "btnPrimary" : ""}`}
             onClick={() => setMode("hard")}
           >
-            Hard Words
+            Hard Terms
           </button>
 
           <label className="btn" style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -395,32 +404,33 @@ export default function PracticePage() {
               checked={soundOn}
               onChange={(e) => setSoundOn(e.target.checked)}
             />
-            Sound
+            Audio
           </label>
 
-          <div className="muted" style={{ marginLeft: "auto" }}>
-            Score: {score}
-          </div>
-
-          <div className="muted">Streak: {streak}</div>
+          <div className="badge">Correct: {score}</div>
+          <div className="badge">Streak: {streak}</div>
         </div>
 
         {fatalError ? (
           <div className="muted">{fatalError}</div>
         ) : loading ? (
-          <div className="muted">Loading...</div>
+          <div className="muted">Loading terms...</div>
         ) : !term ? (
           <div className="muted">
             No terms found for {selectedLangLabel}
             {domain !== "all" ? ` in ${domainLabel(domain)}` : ""}.
           </div>
         ) : (
-          <div className="card">
+          <div className="card" style={{ marginTop: 6 }}>
             <div className="small muted" style={{ marginBottom: 8 }}>
-              Domain: {domainLabel(term.domain)} · Difficulty: {term.difficulty ?? 1}
+              {domainLabel(term.domain)} • Difficulty {term.difficulty ?? 1}
             </div>
 
-            <div className="h1" style={{ marginBottom: 14 }}>
+            <div className="small muted" style={{ marginBottom: 10 }}>
+              Translate this term:
+            </div>
+
+            <div className="h1" style={{ marginBottom: 18 }}>
               {term.source_text}
             </div>
 
@@ -440,22 +450,22 @@ export default function PracticePage() {
 
             <div className="row" style={{ gap: 10, marginTop: 12 }}>
               <button className="btn btnPrimary" onClick={checkAnswer}>
-                Check
+                Check Answer
               </button>
               <button className="btn" onClick={nextTerm}>
-                Next
+                Next Term
               </button>
             </div>
 
             {feedback ? (
-              <div style={{ marginTop: 14 }}>
+              <div style={{ marginTop: 16 }}>
                 {feedback.ok ? (
                   <div>
                     <div style={{ fontWeight: 700 }}>Correct ✓</div>
 
                     {feedback.matched ? (
                       <div className="muted" style={{ marginTop: 6 }}>
-                        Accepted: {feedback.matched}
+                        Accepted answer: {feedback.matched}
                       </div>
                     ) : null}
 
@@ -468,7 +478,7 @@ export default function PracticePage() {
                         }}
                         className="muted"
                       >
-                        Native: {feedback.expectedNative}
+                        Native script: {feedback.expectedNative}
                       </div>
                     ) : null}
                   </div>
