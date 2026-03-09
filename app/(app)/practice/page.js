@@ -47,7 +47,9 @@ function normalizeKey(s) {
 }
 
 function termKey(it) {
-  return `${normalizeKey(it.domain)}|${normalizeKey(it.source_text)}|${normalizeKey(it.target_lang)}`;
+  return `${normalizeKey(it.domain)}|${normalizeKey(it.source_text)}|${normalizeKey(
+    it.target_lang || it.language
+  )}`;
 }
 
 /**
@@ -115,7 +117,7 @@ export default function PracticePage() {
   const inputRef = useRef(null);
 
   const [lang, setLang] = useState("tr");
-  const [mode, setMode] = useState("normal"); // normal | hard
+  const [mode, setMode] = useState("normal"); // normal | hard | weak
   const [domain, setDomain] = useState("all");
 
   const [pool, setPool] = useState([]);
@@ -178,6 +180,71 @@ export default function PracticePage() {
     setFatalError(null);
 
     try {
+      if (mode === "weak") {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (!user) {
+          setPool([]);
+          setTerm(null);
+          setFatalError("Please sign in to practice weak terms.");
+          return;
+        }
+
+        let weakQuery = supabase
+          .from("weak_terms")
+          .select("id,source_text,target_text,target_native,domain,language,created_at")
+          .eq("user_id", user.id)
+          .eq("language", lang)
+          .order("created_at", { ascending: false })
+          .limit(5000);
+
+        if (domain !== "all") {
+          weakQuery = weakQuery.eq("domain", domain);
+        }
+
+        const weakRes = await weakQuery;
+
+        if (weakRes.error) {
+          console.error("Weak terms load failed:", weakRes.error);
+          setFatalError("Could not load weak terms.");
+          setPool([]);
+          setTerm(null);
+          return;
+        }
+
+        const dedupedMap = new Map();
+        for (const row of weakRes.data || []) {
+          const key = `${normalizeKey(row.domain)}|${normalizeKey(row.source_text)}|${normalizeKey(
+            row.language
+          )}`;
+          if (!dedupedMap.has(key)) {
+            dedupedMap.set(key, {
+              id: row.id,
+              domain: row.domain,
+              source_text: row.source_text,
+              target_text: row.target_text,
+              target_native: row.target_native,
+              target_lang: row.language,
+              difficulty: 2,
+              __kind: "weak",
+            });
+          }
+        }
+
+        const weakTerms = Array.from(dedupedMap.values());
+
+        setPool(weakTerms);
+        const first = pickRandom(weakTerms);
+        setTerm(first);
+        setAnswer("");
+        setFeedback(null);
+
+        setTimeout(() => inputRef.current?.focus(), 50);
+        return;
+      }
+
       // shared
       let sharedQuery = supabase
         .from("terms")
@@ -339,6 +406,18 @@ export default function PracticePage() {
     return LANGUAGES.find((l) => l.value === lang)?.label || lang;
   }, [lang]);
 
+  function emptyMessage() {
+    if (mode === "weak") {
+      return `No weak terms found for ${selectedLangLabel}${
+        domain !== "all" ? ` in ${domainLabel(domain)}` : ""
+      }. Complete a Timed Challenge and miss a few terms to build your weak terms list.`;
+    }
+
+    return `No terms found for ${selectedLangLabel}${
+      domain !== "all" ? ` in ${domainLabel(domain)}` : ""
+    }.`;
+  }
+
   return (
     <div className="container">
       <div className="card">
@@ -398,6 +477,14 @@ export default function PracticePage() {
             Hard Terms
           </button>
 
+          <button
+            type="button"
+            className={`btn ${mode === "weak" ? "btnPrimary" : ""}`}
+            onClick={() => setMode("weak")}
+          >
+            Weak Terms
+          </button>
+
           <label className="btn" style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <input
               type="checkbox"
@@ -414,16 +501,16 @@ export default function PracticePage() {
         {fatalError ? (
           <div className="muted">{fatalError}</div>
         ) : loading ? (
-          <div className="muted">Loading terms...</div>
-        ) : !term ? (
           <div className="muted">
-            No terms found for {selectedLangLabel}
-            {domain !== "all" ? ` in ${domainLabel(domain)}` : ""}.
+            {mode === "weak" ? "Loading weak terms..." : "Loading terms..."}
           </div>
+        ) : !term ? (
+          <div className="muted">{emptyMessage()}</div>
         ) : (
           <div className="card" style={{ marginTop: 6 }}>
             <div className="small muted" style={{ marginBottom: 8 }}>
               {domainLabel(term.domain)} • Difficulty {term.difficulty ?? 1}
+              {mode === "weak" ? " • Weak Terms" : ""}
             </div>
 
             <div className="small muted" style={{ marginBottom: 10 }}>

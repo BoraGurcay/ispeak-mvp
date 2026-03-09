@@ -145,6 +145,31 @@ export default function PlayPage() {
     return native || roman;
   }
 
+  async function saveWeakTerm({ source_text, target_text, target_native, domain, language }) {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) return;
+
+      const { error } = await supabase.from("weak_terms").insert({
+        user_id: user.id,
+        source_text,
+        target_text,
+        target_native: target_native || null,
+        domain,
+        language,
+      });
+
+      if (error) {
+        console.error("Error saving weak term:", error);
+      }
+    } catch (err) {
+      console.error("Unexpected weak term save error:", err);
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
 
@@ -174,7 +199,10 @@ export default function PlayPage() {
           setPool([]);
         } else {
           const cleaned = (data || []).filter(
-            (r) => r?.source_text && ((r?.target_text || "").trim() || (r?.target_native || "").trim())
+            (r) =>
+              r?.source_text &&
+              (((r?.target_text || "").trim().length > 0) ||
+                ((r?.target_native || "").trim().length > 0))
           );
           setPool(cleaned);
         }
@@ -201,13 +229,22 @@ export default function PlayPage() {
 
     const distractors = shuffle(
       rows
-        .filter((r) => displayForRow(r) && normalizeText(displayForRow(r)) !== normalizeText(correctDisplay))
+        .filter(
+          (r) =>
+            displayForRow(r) &&
+            normalizeText(displayForRow(r)) !== normalizeText(correctDisplay)
+        )
         .map((r) => displayForRow(r))
     ).slice(0, 2);
 
     const optsDisplay = shuffle([correctDisplay, ...distractors]);
 
-    return { en, correctDisplay, optsDisplay };
+    return {
+      en,
+      correctDisplay,
+      correctNative: (correctRow.target_native || "").trim(),
+      optsDisplay,
+    };
   }
 
   function startRound() {
@@ -246,7 +283,7 @@ export default function PlayPage() {
 
       setReveal(true);
       setTotal((n) => n + 1);
-      setStatusText("Time’s up ⏱️");
+      setStatusText("Time ran out.");
       playSound("wrong");
 
       setMistakes((prev) => [
@@ -258,6 +295,14 @@ export default function PlayPage() {
           reason: "timeout",
         },
       ]);
+
+      void saveWeakTerm({
+        source_text: question.en,
+        target_text: question.correctDisplay,
+        target_native: question.correctNative,
+        domain,
+        language: lang,
+      });
 
       advanceRef.current = setTimeout(() => startRound(), AUTO_ADVANCE_MS);
     }
@@ -275,15 +320,17 @@ export default function PlayPage() {
     setSelected(opt);
     setReveal(true);
 
-    const isCorrect = normalizeText(opt) === normalizeText(question.correctDisplay);
+    const isCorrect =
+      normalizeText(opt) === normalizeText(question.correctDisplay);
 
     setTotal((n) => n + 1);
+
     if (isCorrect) {
       setScore((s) => s + 1);
-      setStatusText("Correct ✅");
+      setStatusText("Correct ✓");
       playSound("correct");
     } else {
-      setStatusText("Wrong ❌");
+      setStatusText("Incorrect ✗");
       playSound("wrong");
 
       setMistakes((prev) => [
@@ -295,6 +342,14 @@ export default function PlayPage() {
           reason: "wrong",
         },
       ]);
+
+      void saveWeakTerm({
+        source_text: question.en,
+        target_text: question.correctDisplay,
+        target_native: question.correctNative,
+        domain,
+        language: lang,
+      });
     }
 
     advanceRef.current = setTimeout(() => startRound(), AUTO_ADVANCE_MS);
@@ -404,18 +459,23 @@ export default function PlayPage() {
   return (
     <div className="container">
       <div className="card">
-        <div className="h1">Play</div>
-        <div className="small muted">Pick the correct translation before the timer runs out.</div>
+        <div className="h1">Timed Challenge</div>
+        <div className="small muted">
+          Translate quickly and accurately before time runs out.
+        </div>
 
-        <div className="row" style={{ marginTop: 10, gap: 10, flexWrap: "wrap" }}>
-          <div className="badge">Score: {score}/{total}</div>
-          <div className="badge">Time: {started && question && !sessionEnded ? timeLeft : "-"}</div>
+        <div className="row" style={{ marginTop: 14, gap: 12, flexWrap: "wrap" }}>
+          <div className="badge">Correct: {score}</div>
+          <div className="badge">Answered: {total}</div>
+          <div className="badge">
+            Time: {started && question && !sessionEnded ? `${timeLeft}s` : "-"}
+          </div>
           <button
             className={"btn " + (soundOn ? "" : "btnDanger")}
             type="button"
             onClick={() => setSoundOn((s) => !s)}
           >
-            Sound: {soundOn ? "On" : "Off"}
+            Audio {soundOn ? "On" : "Off"}
           </button>
         </div>
 
@@ -450,7 +510,7 @@ export default function PlayPage() {
         <div className="row" style={{ marginTop: 12, gap: 10, flexWrap: "wrap" }}>
           {!started ? (
             <button className="btn btnPrimary" type="button" onClick={unlockAudioAndStart}>
-              Start
+              Start Challenge
             </button>
           ) : sessionEnded ? (
             <>
@@ -475,19 +535,19 @@ export default function PlayPage() {
 
         <div style={{ marginTop: 16 }}>
           {loading ? (
-            <div className="small muted">Loading...</div>
+            <div className="small muted">Loading terms...</div>
           ) : !canPlay ? (
             <div className="small muted">
-              Not enough terms to play in this language/domain yet. You need at least 4.
+              Not enough terms are available in this language and domain yet. You need at least 4.
             </div>
           ) : !started ? (
             <div className="small muted">
-              Press Start to begin. For Arabic, Hindi, and Mandarin, the choices show native script when available.
+              Press Start Challenge to begin. For Arabic, Hindi, and Mandarin, native script is shown when available.
             </div>
           ) : sessionEnded ? (
-            <div className="card" style={{ marginTop: 8 }}>
-              <div className="h1" style={{ marginBottom: 12 }}>
-                Session Complete
+            <div className="card" style={{ marginTop: 14 }}>
+              <div className="h1" style={{ marginBottom: 14 }}>
+                Training Summary
               </div>
 
               <div className="small muted" style={{ marginBottom: 12 }}>
@@ -507,20 +567,20 @@ export default function PlayPage() {
               ) : null}
 
               <div className="small muted" style={{ marginTop: 14 }}>
-                Great work. Keep building speed and recall.
+                Strong work. Continue building terminology speed and accuracy.
               </div>
 
               {mistakes.length > 0 ? (
                 <div className="card" style={{ marginTop: 16 }}>
                   <div className="h1" style={{ fontSize: "1.4rem", marginBottom: 10 }}>
-                    Review Mistakes
+                    Review Incorrect Answers
                   </div>
 
                   <div className="col" style={{ gap: 10 }}>
                     {mistakes.map((m, idx) => (
                       <div key={`${m.en}-${idx}`} className="card" style={{ padding: 12 }}>
                         <div className="small muted" style={{ marginBottom: 6 }}>
-                          {m.reason === "timeout" ? "Time ran out" : "Incorrect answer"}
+                          {m.reason === "timeout" ? "Time ran out" : "Incorrect"}
                         </div>
                         <div style={{ fontWeight: 700, marginBottom: 6 }}>{m.en}</div>
                         <div className="small">
@@ -552,18 +612,19 @@ export default function PlayPage() {
               </div>
             </div>
           ) : question ? (
-            <div className="card" style={{ marginTop: 8 }}>
-              <div className="small muted" style={{ marginBottom: 8 }}>
-                Choose the correct translation for:
+            <div className="card" style={{ marginTop: 14 }}>
+              <div className="small muted" style={{ marginBottom: 10 }}>
+                Translate this term:
               </div>
 
-              <div className="h1" style={{ marginBottom: 14 }}>
+              <div className="h1" style={{ marginBottom: 18 }}>
                 {question.en}
               </div>
 
               <div className="col" style={{ gap: 10 }}>
                 {options.map((opt, idx) => {
-                  const isCorrect = normalizeText(opt) === normalizeText(question.correctDisplay);
+                  const isCorrect =
+                    normalizeText(opt) === normalizeText(question.correctDisplay);
                   const isSelected = normalizeText(opt) === normalizeText(selected);
                   const showAsCorrect = reveal && isCorrect;
                   const showAsWrong = reveal && isSelected && !isCorrect;
