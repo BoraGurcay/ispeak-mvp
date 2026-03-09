@@ -27,8 +27,9 @@ export default function SettingsPage() {
     try {
       setLoadingSessions(true);
 
-      const { data: userRes } = await supabase.auth.getUser();
-      const user = userRes?.user;
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
       if (!user) {
         setSessions([]);
@@ -58,11 +59,9 @@ export default function SettingsPage() {
   return (
     <div className="container">
       <div className="card">
-
         <div className="h1">Settings</div>
 
         <label className="small muted">Text size</label>
-
         <select
           className="select"
           value={textSize}
@@ -87,6 +86,12 @@ export default function SettingsPage() {
 
         <div className="hr" />
 
+        <a href="/feedback" className="btn btnPrimary">
+          Send Feedback
+        </a>
+
+        <div className="hr" />
+
         <div className="h1" style={{ fontSize: "1.4rem" }}>
           Training History
         </div>
@@ -100,7 +105,6 @@ export default function SettingsPage() {
         ) : (
           <div className="col" style={{ gap: 10, marginTop: 10 }}>
             {sessions.map((s) => {
-
               const date = new Date(s.created_at).toLocaleString();
 
               return (
@@ -108,7 +112,7 @@ export default function SettingsPage() {
                   <div className="small muted">{date}</div>
 
                   <div style={{ marginTop: 4 }}>
-                    {s.language.toUpperCase()} • {s.domain}
+                    {String(s.language).toUpperCase()} • {s.domain}
                   </div>
 
                   <div className="small">
@@ -123,7 +127,6 @@ export default function SettingsPage() {
             })}
           </div>
         )}
-
       </div>
     </div>
   );
