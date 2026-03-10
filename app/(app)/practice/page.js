@@ -24,7 +24,7 @@ function stripDiacritics(s) {
 * Forgiving normalization that works for:
 * - Latin scripts
 * - Roman Arabic with digits (3/7)
-* - Native scripts like Arabic / Hindi / Mandarin
+* - Native scripts like Arabic / Hindi / Mandarin / Tamil / Punjabi
 */
 function normalizeAnswer(s) {
   return stripDiacritics(stripBracketed(s))
@@ -99,6 +99,10 @@ const LANGUAGES = [
   { value: "hi", label: "Hindi (HI)" },
   { value: "ar", label: "Arabic (AR)" },
   { value: "zh", label: "Mandarin (ZH)" },
+  { value: "ta", label: "Tamil (TA)" },
+  { value: "pa", label: "Punjabi (PA)" },
+  { value: "tl", label: "Tagalog (TL)" },
+  { value: "so", label: "Somali (SO)" },
 ];
 
 const DOMAINS = [
@@ -165,7 +169,7 @@ export default function PracticePage() {
   // load saved language
   useEffect(() => {
     const saved = localStorage.getItem("ispeak_target_lang");
-    if (saved && ["tr", "fr", "es", "pt", "hi", "ar", "zh"].includes(saved)) {
+    if (saved && ["tr", "fr", "es", "pt", "hi", "ar", "zh", "ta", "pa", "tl", "so"].includes(saved)) {
       setLang(saved);
     }
   }, []);

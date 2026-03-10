@@ -15,6 +15,10 @@ const LANGUAGE_OPTIONS = [
   { code: "hi", label: "Hindi (HI)" },
   { code: "ar", label: "Arabic (AR)" },
   { code: "zh", label: "Mandarin (ZH)" },
+  { code: "ta", label: "Tamil (TA)" },
+  { code: "pa", label: "Punjabi (PA)" },
+  { code: "tl", label: "Tagalog (TL)" },
+  { code: "so", label: "Somali (SO)" },
 ];
 
 const DOMAIN_OPTIONS = [
@@ -542,7 +546,7 @@ export default function PlayPage() {
             </div>
           ) : !started ? (
             <div className="small muted">
-              Press Start Challenge to begin. For Arabic, Hindi, and Mandarin, native script is shown when available.
+              Press Start Challenge to begin. For Arabic, Hindi, Mandarin, Tamil, and Punjabi, native script is shown when available.
             </div>
           ) : sessionEnded ? (
             <div className="card" style={{ marginTop: 14 }}>

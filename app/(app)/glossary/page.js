@@ -17,9 +17,13 @@ const languages = [
   { value: "hi", label: "Hindi (HI)" },
   { value: "ar", label: "Arabic (AR)" },
   { value: "zh", label: "Mandarin (ZH)" },
+  { value: "ta", label: "Tamil (TA)" },
+  { value: "pa", label: "Punjabi (PA)" },
+  { value: "tl", label: "Tagalog (TL)" },
+  { value: "so", label: "Somali (SO)" },
 ];
 
-const LANGS_WITH_NATIVE = new Set(["ar", "hi", "zh"]);
+const LANGS_WITH_NATIVE = new Set(["ar", "hi", "zh", "ta", "pa"]);
 
 function domainLabel(value) {
   const d = domains.find((x) => x.value === value);
@@ -46,6 +50,14 @@ function targetLabel(targetLang) {
       return "Arabic (Roman)";
     case "zh":
       return "Mandarin (Pinyin)";
+    case "ta":
+      return "Tamil (Roman)";
+    case "pa":
+      return "Punjabi (Roman)";
+    case "tl":
+      return "Tagalog";
+    case "so":
+      return "Somali";
     default:
       return "Translation";
   }
@@ -59,6 +71,10 @@ function targetNativeLabel(targetLang) {
       return "Hindi (Native)";
     case "zh":
       return "Mandarin (Native)";
+    case "ta":
+      return "Tamil (Native)";
+    case "pa":
+      return "Punjabi (Native)";
     default:
       return "Native (optional)";
   }
@@ -80,6 +96,14 @@ function targetPlaceholder(targetLang) {
       return "e.g., mahkama / 3am / 7aqq";
     case "zh":
       return "e.g., fayuan / lüshi";
+    case "ta":
+      return "e.g., neethimandram / vakkeel";
+    case "pa":
+      return "e.g., adaalat / wakeel";
+    case "tl":
+      return "e.g., hukuman / pagdinig";
+    case "so":
+      return "e.g., maxkamad / qareen";
     default:
       return "e.g., translation";
   }
@@ -93,6 +117,10 @@ function targetNativePlaceholder(targetLang) {
       return "e.g., न्यायालय / वकील";
     case "zh":
       return "e.g., 法院 / 律师";
+    case "ta":
+      return "e.g., நீதிமன்றம் / வழக்கறிஞர்";
+    case "pa":
+      return "e.g., ਅਦਾਲਤ / ਵਕੀਲ";
     default:
       return "e.g., native script";
   }
@@ -152,7 +180,7 @@ export default function Glossary() {
 
   useEffect(() => {
     const saved = localStorage.getItem("ispeak_target_lang");
-    if (["tr", "fr", "es", "pt", "hi", "ar", "zh"].includes(saved)) {
+    if (["tr", "fr", "es", "pt", "hi", "ar", "zh", "ta", "pa", "tl", "so"].includes(saved)) {
       setTargetLang(saved);
     }
   }, []);
