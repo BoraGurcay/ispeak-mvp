@@ -21,9 +21,23 @@ const languages = [
   { value: "pa", label: "Punjabi (PA)" },
   { value: "tl", label: "Tagalog (TL)" },
   { value: "so", label: "Somali (SO)" },
+  { value: "el", label: "Greek (EL)" },
+  { value: "ur", label: "Urdu (UR)" },
+  { value: "uk", label: "Ukrainian (UK)" },
+  { value: "fa", label: "Farsi (FA)" },
 ];
 
-const LANGS_WITH_NATIVE = new Set(["ar", "hi", "zh", "ta", "pa"]);
+const LANGS_WITH_NATIVE = new Set([
+  "ar",
+  "hi",
+  "zh",
+  "ta",
+  "pa",
+  "el",
+  "ur",
+  "uk",
+  "fa",
+]);
 
 function domainLabel(value) {
   const d = domains.find((x) => x.value === value);
@@ -58,6 +72,14 @@ function targetLabel(targetLang) {
       return "Tagalog";
     case "so":
       return "Somali";
+    case "el":
+      return "Greek (Roman)";
+    case "ur":
+      return "Urdu (Roman)";
+    case "uk":
+      return "Ukrainian (Roman)";
+    case "fa":
+      return "Farsi (Roman)";
     default:
       return "Translation";
   }
@@ -75,6 +97,14 @@ function targetNativeLabel(targetLang) {
       return "Tamil (Native)";
     case "pa":
       return "Punjabi (Native)";
+    case "el":
+      return "Greek (Native)";
+    case "ur":
+      return "Urdu (Native)";
+    case "uk":
+      return "Ukrainian (Native)";
+    case "fa":
+      return "Farsi (Native)";
     default:
       return "Native (optional)";
   }
@@ -104,6 +134,14 @@ function targetPlaceholder(targetLang) {
       return "e.g., hukuman / pagdinig";
     case "so":
       return "e.g., maxkamad / qareen";
+    case "el":
+      return "e.g., dikastirio / diki";
+    case "ur":
+      return "e.g., adaalat / wakeel";
+    case "uk":
+      return "e.g., sud / advokat";
+    case "fa":
+      return "e.g., dadgah / vakil";
     default:
       return "e.g., translation";
   }
@@ -121,6 +159,14 @@ function targetNativePlaceholder(targetLang) {
       return "e.g., நீதிமன்றம் / வழக்கறிஞர்";
     case "pa":
       return "e.g., ਅਦਾਲਤ / ਵਕੀਲ";
+    case "el":
+      return "e.g., δικαστήριο / δικηγόρος";
+    case "ur":
+      return "e.g., عدالت / وکیل";
+    case "uk":
+      return "e.g., суд / адвокат";
+    case "fa":
+      return "e.g., دادگاه / وکیل";
     default:
       return "e.g., native script";
   }
@@ -180,7 +226,25 @@ export default function Glossary() {
 
   useEffect(() => {
     const saved = localStorage.getItem("ispeak_target_lang");
-    if (["tr", "fr", "es", "pt", "hi", "ar", "zh", "ta", "pa", "tl", "so"].includes(saved)) {
+    if (
+      [
+        "tr",
+        "fr",
+        "es",
+        "pt",
+        "hi",
+        "ar",
+        "zh",
+        "ta",
+        "pa",
+        "tl",
+        "so",
+        "el",
+        "ur",
+        "uk",
+        "fa",
+      ].includes(saved)
+    ) {
       setTargetLang(saved);
     }
   }, []);
@@ -512,7 +576,7 @@ export default function Glossary() {
                 value={form.target_native}
                 onChange={(e) => setForm((f) => ({ ...f, target_native: e.target.value }))}
                 placeholder={targetNativePlaceholder(targetLang)}
-                dir={targetLang === "ar" ? "rtl" : "auto"}
+                dir={targetLang === "ar" || targetLang === "ur" || targetLang === "fa" ? "rtl" : "auto"}
               />
             </label>
           ) : null}
@@ -618,7 +682,12 @@ export default function Glossary() {
                           style={{
                             fontSize: 20,
                             lineHeight: 1.5,
-                            direction: it.target_lang === "ar" ? "rtl" : "auto",
+                            direction:
+                              it.target_lang === "ar" ||
+                              it.target_lang === "ur" ||
+                              it.target_lang === "fa"
+                                ? "rtl"
+                                : "auto",
                           }}
                         >
                           {it.target_native}

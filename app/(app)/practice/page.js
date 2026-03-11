@@ -24,7 +24,7 @@ function stripDiacritics(s) {
 * Forgiving normalization that works for:
 * - Latin scripts
 * - Roman Arabic with digits (3/7)
-* - Native scripts like Arabic / Hindi / Mandarin / Tamil / Punjabi
+* - Native scripts like Arabic / Hindi / Mandarin / Tamil / Punjabi / Greek / Urdu / Ukrainian / Farsi
 */
 function normalizeAnswer(s) {
   return stripDiacritics(stripBracketed(s))
@@ -103,6 +103,10 @@ const LANGUAGES = [
   { value: "pa", label: "Punjabi (PA)" },
   { value: "tl", label: "Tagalog (TL)" },
   { value: "so", label: "Somali (SO)" },
+  { value: "el", label: "Greek (EL)" },
+  { value: "ur", label: "Urdu (UR)" },
+  { value: "uk", label: "Ukrainian (UK)" },
+  { value: "fa", label: "Farsi (FA)" },
 ];
 
 const DOMAINS = [
@@ -169,7 +173,10 @@ export default function PracticePage() {
   // load saved language
   useEffect(() => {
     const saved = localStorage.getItem("ispeak_target_lang");
-    if (saved && ["tr", "fr", "es", "pt", "hi", "ar", "zh", "ta", "pa", "tl", "so"].includes(saved)) {
+    if (
+      saved &&
+      ["tr", "fr", "es", "pt", "hi", "ar", "zh", "ta", "pa", "tl", "so", "el", "ur", "uk", "fa"].includes(saved)
+    ) {
       setLang(saved);
     }
   }, []);
@@ -438,9 +445,7 @@ export default function PracticePage() {
 
         <div className="row" style={{ gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
           <div style={{ minWidth: 180 }}>
-            <div className="muted" style={{ marginBottom: 6 }}>
-              Language
-            </div>
+            <div className="muted" style={{ marginBottom: 6 }}>Language</div>
             <select className="input" value={lang} onChange={(e) => setLang(e.target.value)}>
               {LANGUAGES.map((l) => (
                 <option key={l.value} value={l.value}>
@@ -451,9 +456,7 @@ export default function PracticePage() {
           </div>
 
           <div style={{ minWidth: 180 }}>
-            <div className="muted" style={{ marginBottom: 6 }}>
-              Domain
-            </div>
+            <div className="muted" style={{ marginBottom: 6 }}>Domain</div>
             <select className="input" value={domain} onChange={(e) => setDomain(e.target.value)}>
               {DOMAINS.map((d) => (
                 <option key={d.value} value={d.value}>
@@ -565,7 +568,10 @@ export default function PracticePage() {
                       <div
                         style={{
                           marginTop: 4,
-                          direction: lang === "ar" ? "rtl" : "auto",
+                          direction:
+                            lang === "ar" || lang === "ur" || lang === "fa"
+                              ? "rtl"
+                              : "auto",
                         }}
                         className="muted"
                       >

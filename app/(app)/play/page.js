@@ -19,6 +19,10 @@ const LANGUAGE_OPTIONS = [
   { code: "pa", label: "Punjabi (PA)" },
   { code: "tl", label: "Tagalog (TL)" },
   { code: "so", label: "Somali (SO)" },
+  { code: "el", label: "Greek (EL)" },
+  { code: "ur", label: "Urdu (UR)" },
+  { code: "uk", label: "Ukrainian (UK)" },
+  { code: "fa", label: "Farsi (FA)" },
 ];
 
 const DOMAIN_OPTIONS = [
@@ -324,8 +328,7 @@ export default function PlayPage() {
     setSelected(opt);
     setReveal(true);
 
-    const isCorrect =
-      normalizeText(opt) === normalizeText(question.correctDisplay);
+    const isCorrect = normalizeText(opt) === normalizeText(question.correctDisplay);
 
     setTotal((n) => n + 1);
 
@@ -546,7 +549,7 @@ export default function PlayPage() {
             </div>
           ) : !started ? (
             <div className="small muted">
-              Press Start Challenge to begin. For Arabic, Hindi, Mandarin, Tamil, and Punjabi, native script is shown when available.
+              Press Start Challenge to begin. For Arabic, Hindi, Mandarin, Tamil, Punjabi, Greek, Urdu, Ukrainian, and Farsi, native script is shown when available.
             </div>
           ) : sessionEnded ? (
             <div className="card" style={{ marginTop: 14 }}>
@@ -647,7 +650,10 @@ export default function PlayPage() {
                       style={{
                         textAlign: "left",
                         justifyContent: "flex-start",
-                        direction: lang === "ar" ? "rtl" : "auto",
+                        direction:
+                          lang === "ar" || lang === "ur" || lang === "fa"
+                            ? "rtl"
+                            : "auto",
                       }}
                     >
                       {opt}
