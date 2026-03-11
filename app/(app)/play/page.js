@@ -32,6 +32,11 @@ const DOMAIN_OPTIONS = [
   { value: "family", label: "Family" },
 ];
 
+const DIRECTION_OPTIONS = [
+  { value: "en_to_target", label: "English → Target" },
+  { value: "target_to_en", label: "Target → English" },
+];
+
 function shuffle(arr) {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -66,9 +71,25 @@ function languageLabel(value) {
   return LANGUAGE_OPTIONS.find((l) => l.code === value)?.label || value;
 }
 
+function isRtlLang(lang) {
+  return lang === "ar" || lang === "ur" || lang === "fa";
+}
+
+function displayTargetTerm(row) {
+  const native = (row?.target_native || "").trim();
+  const roman = (row?.target_text || "").trim();
+
+  if (native && roman) {
+    return `${native}\n${roman}`;
+  }
+
+  return native || roman;
+}
+
 export default function PlayPage() {
   const [lang, setLang] = useState("tr");
   const [domain, setDomain] = useState("court");
+  const [direction, setDirection] = useState("en_to_target");
   const [soundOn, setSoundOn] = useState(true);
 
   const [loading, setLoading] = useState(true);
@@ -103,12 +124,21 @@ export default function PlayPage() {
     tickAudioRef.current = new Audio("/sounds/tick.mp3");
     tickAudioRef.current.loop = true;
 
+    const savedDirection = localStorage.getItem("ispeak_direction");
+    if (savedDirection && ["en_to_target", "target_to_en"].includes(savedDirection)) {
+      setDirection(savedDirection);
+    }
+
     return () => {
       stopAllTimers();
       stopTick();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem("ispeak_direction", direction);
+  }, [direction]);
 
   function stopAllTimers() {
     if (timerRef.current) clearInterval(timerRef.current);
@@ -145,17 +175,6 @@ export default function PlayPage() {
       a.currentTime = 0;
       a.play();
     } catch {}
-  }
-
-  function displayForRow(row) {
-    const native = (row?.target_native || "").trim();
-    const roman = (row?.target_text || "").trim();
-
-    if (native && roman) {
-      return `${native}\n${roman}`;
-    }
-
-    return native || roman;
   }
 
   async function saveWeakTerm({ source_text, target_text, target_native, domain, language }) {
@@ -237,25 +256,54 @@ export default function PlayPage() {
     if (rows.length < 4) return null;
 
     const correctRow = pickRandom(rows);
-    const en = String(correctRow.source_text);
-    const correctDisplay = displayForRow(correctRow);
+
+    if (direction === "target_to_en") {
+      const prompt = displayTargetTerm(correctRow);
+      const correctDisplay = String(correctRow.source_text || "").trim();
+
+      const distractors = shuffle(
+        rows
+          .filter(
+            (r) =>
+              r?.source_text &&
+              normalizeText(r.source_text) !== normalizeText(correctDisplay)
+          )
+          .map((r) => String(r.source_text || "").trim())
+      ).slice(0, 2);
+
+      const optsDisplay = shuffle([correctDisplay, ...distractors]);
+
+      return {
+        prompt,
+        correctDisplay,
+        sourceText: String(correctRow.source_text || "").trim(),
+        targetText: String(correctRow.target_text || "").trim(),
+        targetNative: String(correctRow.target_native || "").trim(),
+        optsDisplay,
+      };
+    }
+
+    const prompt = String(correctRow.source_text || "").trim();
+    const correctDisplay = displayTargetTerm(correctRow);
 
     const distractors = shuffle(
       rows
         .filter(
           (r) =>
-            displayForRow(r) &&
-            normalizeText(displayForRow(r)) !== normalizeText(correctDisplay)
+            displayTargetTerm(r) &&
+            normalizeText(displayTargetTerm(r)) !== normalizeText(correctDisplay)
         )
-        .map((r) => displayForRow(r))
+        .map((r) => displayTargetTerm(r))
     ).slice(0, 2);
 
     const optsDisplay = shuffle([correctDisplay, ...distractors]);
 
     return {
-      en,
+      prompt,
       correctDisplay,
-      correctNative: (correctRow.target_native || "").trim(),
+      sourceText: String(correctRow.source_text || "").trim(),
+      targetText: String(correctRow.target_text || "").trim(),
+      targetNative: String(correctRow.target_native || "").trim(),
       optsDisplay,
     };
   }
@@ -302,7 +350,7 @@ export default function PlayPage() {
       setMistakes((prev) => [
         ...prev,
         {
-          en: question.en,
+          prompt: question.prompt,
           correctDisplay: question.correctDisplay,
           selected: null,
           reason: "timeout",
@@ -310,9 +358,9 @@ export default function PlayPage() {
       ]);
 
       void saveWeakTerm({
-        source_text: question.en,
-        target_text: question.correctDisplay,
-        target_native: question.correctNative,
+        source_text: question.sourceText,
+        target_text: question.targetText,
+        target_native: question.targetNative,
         domain,
         language: lang,
       });
@@ -348,7 +396,7 @@ export default function PlayPage() {
       setMistakes((prev) => [
         ...prev,
         {
-          en: question.en,
+          prompt: question.prompt,
           correctDisplay: question.correctDisplay,
           selected: opt,
           reason: "wrong",
@@ -356,9 +404,9 @@ export default function PlayPage() {
       ]);
 
       void saveWeakTerm({
-        source_text: question.en,
-        target_text: question.correctDisplay,
-        target_native: question.correctNative,
+        source_text: question.sourceText,
+        target_text: question.targetText,
+        target_native: question.targetNative,
         domain,
         language: lang,
       });
@@ -517,6 +565,23 @@ export default function PlayPage() {
               ))}
             </select>
           </div>
+
+          <div style={{ minWidth: 220 }}>
+            <label className="muted" style={{ display: "block", marginBottom: 6 }}>
+              Direction
+            </label>
+            <select
+              className="input"
+              value={direction}
+              onChange={(e) => setDirection(e.target.value)}
+            >
+              {DIRECTION_OPTIONS.map((d) => (
+                <option key={d.value} value={d.value}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div className="row" style={{ marginTop: 12, gap: 10, flexWrap: "wrap" }}>
@@ -563,7 +628,8 @@ export default function PlayPage() {
               </div>
 
               <div className="small muted" style={{ marginBottom: 12 }}>
-                {languageLabel(lang)} • {domainLabel(domain)}
+                {languageLabel(lang)} • {domainLabel(domain)} •{" "}
+                {direction === "en_to_target" ? "English → Target" : "Target → English"}
               </div>
 
               <div className="col" style={{ gap: 8 }}>
@@ -590,15 +656,25 @@ export default function PlayPage() {
 
                   <div className="col" style={{ gap: 10 }}>
                     {mistakes.map((m, idx) => (
-                      <div key={`${m.en}-${idx}`} className="card" style={{ padding: 12 }}>
+                      <div key={`${m.prompt}-${idx}`} className="card" style={{ padding: 12 }}>
                         <div className="small muted" style={{ marginBottom: 6 }}>
                           {m.reason === "timeout" ? "Time ran out" : "Incorrect"}
                         </div>
-                        <div style={{ fontWeight: 700, marginBottom: 6 }}>{m.en}</div>
-                        <div className="small">
+                        <div
+                          style={{
+                            fontWeight: 700,
+                            marginBottom: 6,
+                            whiteSpace: "pre-line",
+                            direction:
+                              direction === "target_to_en" && isRtlLang(lang) ? "rtl" : "auto",
+                          }}
+                        >
+                          {m.prompt}
+                        </div>
+                        <div className="small" style={{ whiteSpace: "pre-line" }}>
                           <strong>Correct:</strong> {m.correctDisplay}
                         </div>
-                        <div className="small muted" style={{ marginTop: 4 }}>
+                        <div className="small muted" style={{ marginTop: 4, whiteSpace: "pre-line" }}>
                           <strong>Your answer:</strong> {m.selected || "—"}
                         </div>
                       </div>
@@ -629,8 +705,15 @@ export default function PlayPage() {
                 Translate this term:
               </div>
 
-              <div className="h1" style={{ marginBottom: 18 }}>
-                {question.en}
+              <div
+                className="h1"
+                style={{
+                  marginBottom: 18,
+                  whiteSpace: "pre-line",
+                  direction: direction === "target_to_en" && isRtlLang(lang) ? "rtl" : "auto",
+                }}
+              >
+                {question.prompt}
               </div>
 
               <div className="col" style={{ gap: 10 }}>
@@ -668,7 +751,9 @@ export default function PlayPage() {
                               fontWeight: i === 0 ? 700 : 400,
                               opacity: i === 0 ? 1 : 0.8,
                               direction:
-                                i === 0 && (lang === "ar" || lang === "ur" || lang === "fa")
+                                direction === "en_to_target" &&
+                                i === 0 &&
+                                isRtlLang(lang)
                                   ? "rtl"
                                   : "auto",
                             }}

@@ -52,9 +52,6 @@ function termKey(it) {
   )}`;
 }
 
-/**
-* Split acceptable answers from a field that may include alternatives.
-*/
 function splitExpectedAnswers(expectedRaw) {
   const raw = (expectedRaw || "").toString().trim();
   if (!raw) return [];
@@ -116,9 +113,26 @@ const DOMAINS = [
   { value: "family", label: "Family" },
 ];
 
+const DIRECTIONS = [
+  { value: "en_to_target", label: "English → Target" },
+  { value: "target_to_en", label: "Target → English" },
+];
+
 function domainLabel(value) {
   const d = DOMAINS.find((x) => x.value === value);
   return d?.label ?? "Court";
+}
+
+function isRtlLang(lang) {
+  return lang === "ar" || lang === "ur" || lang === "fa";
+}
+
+function displayTargetTerm(term) {
+  const native = (term?.target_native || "").trim();
+  const roman = (term?.target_text || "").trim();
+
+  if (native && roman) return `${native}\n${roman}`;
+  return native || roman || "";
 }
 
 export default function PracticePage() {
@@ -127,6 +141,7 @@ export default function PracticePage() {
   const [lang, setLang] = useState("tr");
   const [mode, setMode] = useState("normal"); // normal | hard | weak
   const [domain, setDomain] = useState("all");
+  const [direction, setDirection] = useState("en_to_target");
 
   const [pool, setPool] = useState([]);
   const [term, setTerm] = useState(null);
@@ -170,7 +185,6 @@ export default function PracticePage() {
     } catch {}
   }
 
-  // load saved language
   useEffect(() => {
     const saved = localStorage.getItem("ispeak_target_lang");
     if (
@@ -179,11 +193,20 @@ export default function PracticePage() {
     ) {
       setLang(saved);
     }
+
+    const savedDirection = localStorage.getItem("ispeak_direction");
+    if (savedDirection && ["en_to_target", "target_to_en"].includes(savedDirection)) {
+      setDirection(savedDirection);
+    }
   }, []);
 
   useEffect(() => {
     localStorage.setItem("ispeak_target_lang", lang);
   }, [lang]);
+
+  useEffect(() => {
+    localStorage.setItem("ispeak_direction", direction);
+  }, [direction]);
 
   async function loadPool() {
     setLoading(true);
@@ -256,7 +279,6 @@ export default function PracticePage() {
         return;
       }
 
-      // shared
       let sharedQuery = supabase
         .from("terms")
         .select(
@@ -280,7 +302,6 @@ export default function PracticePage() {
 
       const shared = (sharedRes.data || []).map((t) => ({ ...t, __kind: "shared" }));
 
-      // personal
       let personal = [];
       const { data: userRes } = await supabase.auth.getUser();
       const user = userRes?.user;
@@ -308,7 +329,6 @@ export default function PracticePage() {
         }
       }
 
-      // personal overrides shared
       const personalKeys = new Set(personal.map(termKey));
       const sharedFiltered = shared.filter((t) => !personalKeys.has(termKey(t)));
 
@@ -360,6 +380,46 @@ export default function PracticePage() {
     const userRaw = answer || "";
     const userNorm = normalizeAnswer(userRaw);
     if (!userNorm) return;
+
+    if (direction === "target_to_en") {
+      const englishAcceptedRaw = splitExpectedAnswers(term.source_text || "");
+      const englishAcceptedNorm = englishAcceptedRaw.map((x) => normalizeAnswer(x)).filter(Boolean);
+      const englishWholeNorm = normalizeAnswer(term.source_text || "");
+
+      const ok =
+        (englishAcceptedNorm.length > 0 && englishAcceptedNorm.includes(userNorm)) ||
+        (englishWholeNorm && userNorm === englishWholeNorm);
+
+      let matched = null;
+      if (ok) {
+        const idx = englishAcceptedNorm.indexOf(userNorm);
+        if (idx >= 0) matched = englishAcceptedRaw[idx] || null;
+        else if (userNorm === englishWholeNorm) matched = term.source_text || null;
+      }
+
+      playSound(ok);
+
+      if (ok) {
+        setFeedback({
+          ok: true,
+          accepted: uniqByNorm(englishAcceptedRaw),
+          matched,
+          expectedNative: null,
+        });
+        setScore((s) => s + 1);
+        setStreak((s) => s + 1);
+      } else {
+        setFeedback({
+          ok: false,
+          accepted: uniqByNorm(englishAcceptedRaw),
+          matched: null,
+          expectedNative: null,
+        });
+        setStreak(0);
+      }
+
+      return;
+    }
 
     const romanRaw = term.target_text || "";
     const nativeRaw = term.target_native || "";
@@ -429,6 +489,14 @@ export default function PracticePage() {
     }.`;
   }
 
+  const promptText =
+    direction === "target_to_en" ? displayTargetTerm(term || {}) : term?.source_text || "";
+
+  const placeholderText =
+    direction === "target_to_en"
+      ? "Type the English translation..."
+      : `Type the ${selectedLangLabel} translation...`;
+
   return (
     <div className="container">
       <div className="card">
@@ -459,6 +527,21 @@ export default function PracticePage() {
             <div className="muted" style={{ marginBottom: 6 }}>Domain</div>
             <select className="input" value={domain} onChange={(e) => setDomain(e.target.value)}>
               {DOMAINS.map((d) => (
+                <option key={d.value} value={d.value}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ minWidth: 220 }}>
+            <div className="muted" style={{ marginBottom: 6 }}>Direction</div>
+            <select
+              className="input"
+              value={direction}
+              onChange={(e) => setDirection(e.target.value)}
+            >
+              {DIRECTIONS.map((d) => (
                 <option key={d.value} value={d.value}>
                   {d.label}
                 </option>
@@ -524,8 +607,15 @@ export default function PracticePage() {
               Translate this term:
             </div>
 
-            <div className="h1" style={{ marginBottom: 18 }}>
-              {term.source_text}
+            <div
+              className="h1"
+              style={{
+                marginBottom: 18,
+                whiteSpace: "pre-line",
+                direction: direction === "target_to_en" && isRtlLang(lang) ? "rtl" : "auto",
+              }}
+            >
+              {promptText}
             </div>
 
             <input
@@ -533,13 +623,14 @@ export default function PracticePage() {
               className="input"
               value={answer}
               onChange={(e) => setAnswer(e.target.value)}
-              placeholder={`Type the ${selectedLangLabel} translation...`}
+              placeholder={placeholderText}
               onKeyDown={(e) => {
                 if (e.key === "Enter") checkAnswer();
               }}
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
+              dir={direction === "en_to_target" && isRtlLang(lang) ? "rtl" : "auto"}
             />
 
             <div className="row" style={{ gap: 10, marginTop: 12 }}>
@@ -558,20 +649,29 @@ export default function PracticePage() {
                     <div style={{ fontWeight: 700 }}>Correct ✓</div>
 
                     {feedback.matched ? (
-                      <div className="muted" style={{ marginTop: 6 }}>
+                      <div
+                        className="muted"
+                        style={{
+                          marginTop: 6,
+                          direction:
+                            direction === "en_to_target" &&
+                            feedback.expectedNative &&
+                            isRtlLang(lang)
+                              ? "rtl"
+                              : "auto",
+                        }}
+                      >
                         Accepted answer: {feedback.matched}
                       </div>
                     ) : null}
 
-                    {feedback.expectedNative &&
+                    {direction === "en_to_target" &&
+                    feedback.expectedNative &&
                     normalizeAnswer(feedback.expectedNative) !== normalizeAnswer(feedback.matched) ? (
                       <div
                         style={{
                           marginTop: 4,
-                          direction:
-                            lang === "ar" || lang === "ur" || lang === "fa"
-                              ? "rtl"
-                              : "auto",
+                          direction: isRtlLang(lang) ? "rtl" : "auto",
                         }}
                         className="muted"
                       >
@@ -584,7 +684,16 @@ export default function PracticePage() {
                     <div style={{ fontWeight: 700 }}>Not quite</div>
 
                     {feedback.accepted?.length ? (
-                      <div className="muted" style={{ marginTop: 6 }}>
+                      <div
+                        className="muted"
+                        style={{
+                          marginTop: 6,
+                          direction:
+                            direction === "en_to_target" && isRtlLang(lang)
+                              ? "rtl"
+                              : "auto",
+                        }}
+                      >
                         Accepted answers: {feedback.accepted.join(" / ")}
                       </div>
                     ) : null}
