@@ -150,6 +150,11 @@ export default function PlayPage() {
   function displayForRow(row) {
     const native = (row?.target_native || "").trim();
     const roman = (row?.target_text || "").trim();
+
+    if (native && roman) {
+      return `${native}\n${roman}`;
+    }
+
     return native || roman;
   }
 
