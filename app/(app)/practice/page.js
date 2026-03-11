@@ -92,21 +92,21 @@ function uniqByNorm(rawList) {
 // --------- config ---------
 
 const LANGUAGES = [
-  { value: "tr", label: "Turkish (TR)" },
-  { value: "fr", label: "French (FR)" },
-  { value: "es", label: "Spanish (ES)" },
-  { value: "pt", label: "Portuguese (PT)" },
-  { value: "hi", label: "Hindi (HI)" },
-  { value: "ar", label: "Arabic (AR)" },
-  { value: "zh", label: "Mandarin (ZH)" },
-  { value: "ta", label: "Tamil (TA)" },
-  { value: "pa", label: "Punjabi (PA)" },
-  { value: "tl", label: "Tagalog (TL)" },
-  { value: "so", label: "Somali (SO)" },
-  { value: "el", label: "Greek (EL)" },
-  { value: "ur", label: "Urdu (UR)" },
-  { value: "uk", label: "Ukrainian (UK)" },
-  { value: "fa", label: "Farsi (FA)" },
+  { value: "tr", label: "🇹🇷 Turkish" },
+  { value: "fr", label: "🇫🇷 French" },
+  { value: "es", label: "🇪🇸 Spanish" },
+  { value: "pt", label: "🇵🇹 Portuguese" },
+  { value: "hi", label: "🇮🇳 Hindi" },
+  { value: "ar", label: "🇸🇦 Arabic" },
+  { value: "zh", label: "🇨🇳 Mandarin" },
+  { value: "ta", label: "🇮🇳 Tamil" },
+  { value: "pa", label: "🇮🇳 Punjabi" },
+  { value: "tl", label: "🇵🇭 Tagalog" },
+  { value: "so", label: "🇸🇴 Somali" },
+  { value: "el", label: "🇬🇷 Greek" },
+  { value: "ur", label: "🇵🇰 Urdu" },
+  { value: "uk", label: "🇺🇦 Ukrainian" },
+  { value: "fa", label: "🇮🇷 Farsi" },
 ];
 
 const DOMAINS = [

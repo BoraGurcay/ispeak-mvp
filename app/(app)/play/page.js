@@ -8,21 +8,21 @@ const ROUND_SECONDS = 10;
 const AUTO_ADVANCE_MS = 600;
 
 const LANGUAGE_OPTIONS = [
-  { code: "tr", label: "Turkish (TR)" },
-  { code: "fr", label: "French (FR)" },
-  { code: "es", label: "Spanish (ES)" },
-  { code: "pt", label: "Portuguese (PT)" },
-  { code: "hi", label: "Hindi (HI)" },
-  { code: "ar", label: "Arabic (AR)" },
-  { code: "zh", label: "Mandarin (ZH)" },
-  { code: "ta", label: "Tamil (TA)" },
-  { code: "pa", label: "Punjabi (PA)" },
-  { code: "tl", label: "Tagalog (TL)" },
-  { code: "so", label: "Somali (SO)" },
-  { code: "el", label: "Greek (EL)" },
-  { code: "ur", label: "Urdu (UR)" },
-  { code: "uk", label: "Ukrainian (UK)" },
-  { code: "fa", label: "Farsi (FA)" },
+  { code: "tr", label: "🇹🇷 Turkish" },
+  { code: "fr", label: "🇫🇷 French" },
+  { code: "es", label: "🇪🇸 Spanish" },
+  { code: "pt", label: "🇵🇹 Portuguese" },
+  { code: "hi", label: "🇮🇳 Hindi" },
+  { code: "ar", label: "🇸🇦 Arabic" },
+  { code: "zh", label: "🇨🇳 Mandarin" },
+  { code: "ta", label: "🇮🇳 Tamil" },
+  { code: "pa", label: "🇮🇳 Punjabi" },
+  { code: "tl", label: "🇵🇭 Tagalog" },
+  { code: "so", label: "🇸🇴 Somali" },
+  { code: "el", label: "🇬🇷 Greek" },
+  { code: "ur", label: "🇵🇰 Urdu" },
+  { code: "uk", label: "🇺🇦 Ukrainian" },
+  { code: "fa", label: "🇮🇷 Farsi" },
 ];
 
 const DOMAIN_OPTIONS = [
@@ -655,13 +655,27 @@ export default function PlayPage() {
                       style={{
                         textAlign: "left",
                         justifyContent: "flex-start",
-                        direction:
-                          lang === "ar" || lang === "ur" || lang === "fa"
-                            ? "rtl"
-                            : "auto",
+                        whiteSpace: "normal",
                       }}
                     >
-                      {opt}
+                      {String(opt)
+                        .split("\n")
+                        .map((line, i) => (
+                          <div
+                            key={i}
+                            style={{
+                              lineHeight: 1.35,
+                              fontWeight: i === 0 ? 700 : 400,
+                              opacity: i === 0 ? 1 : 0.8,
+                              direction:
+                                i === 0 && (lang === "ar" || lang === "ur" || lang === "fa")
+                                  ? "rtl"
+                                  : "auto",
+                            }}
+                          >
+                            {line}
+                          </div>
+                        ))}
                     </button>
                   );
                 })}
