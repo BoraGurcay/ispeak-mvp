@@ -8,7 +8,7 @@ export default function Home() {
   async function shareApp() {
     const url = "https://ispeaktraining.com";
     const text =
-      "iSpeak — interpreter training for legal terminology. Practice court, immigration and family terms in 15 languages.";
+      "iSpeak — Interpreter terminology training.\n\nPractice court, immigration, and family terminology and build your own glossary.\n\nhttps://ispeaktraining.com";
 
     try {
       if (navigator.share) {
