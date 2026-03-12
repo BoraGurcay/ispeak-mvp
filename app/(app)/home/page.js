@@ -5,6 +5,28 @@ import Link from "next/link";
 import { signOut } from "../../../lib/auth";
 
 export default function Home() {
+  async function shareApp() {
+    const url = "https://ispeaktraining.com";
+    const text =
+      "iSpeak — interpreter training for legal terminology. Practice court, immigration and family terms in 15 languages.";
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: "iSpeak Interpreter Training",
+          text,
+          url,
+        });
+        return;
+      }
+
+      await navigator.clipboard.writeText(url);
+      alert("Link copied to clipboard!");
+    } catch (err) {
+      console.error("Share failed:", err);
+    }
+  }
+
   return (
     <div className="container">
       <div className="card" style={{ textAlign: "center" }}>
@@ -63,6 +85,32 @@ export default function Home() {
 
           <button className="btn btnDanger" onClick={() => signOut()}>
             Log Out
+          </button>
+        </div>
+
+        <div style={{ height: 18 }} />
+
+        <div
+          className="card"
+          style={{
+            maxWidth: 560,
+            margin: "0 auto",
+            textAlign: "center",
+          }}
+        >
+          <div className="small muted" style={{ lineHeight: 1.7, marginBottom: 12 }}>
+            Know another interpreter or interpreting student?
+            <br />
+            Share iSpeak with them.
+          </div>
+
+          <button
+            className="btn btnPrimary"
+            type="button"
+            onClick={shareApp}
+            style={{ minWidth: 180 }}
+          >
+            Share iSpeak
           </button>
         </div>
 
