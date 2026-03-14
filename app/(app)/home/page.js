@@ -30,13 +30,14 @@ export default function Home() {
   return (
     <div className="container">
       <div className="card" style={{ textAlign: "center" }}>
-        <div style={{ display: "flex", justifyContent: "center", marginBottom: 20 }}>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 28 }}>
           <Image
             src="/brand/logo.png"
             alt="iSpeak"
-            width={190}
-            height={190}
+            width={220}
+            height={220}
             priority
+            style={{ filter: "drop-shadow(0 6px 12px rgba(0,0,0,0.12))" }}
           />
         </div>
 
