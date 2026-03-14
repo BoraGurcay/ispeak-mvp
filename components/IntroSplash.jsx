@@ -16,12 +16,12 @@ export default function IntroSplash() {
       return;
     }
 
-    const enterTimer = setTimeout(() => setMounted(true), 30);
-    const leaveTimer = setTimeout(() => setLeaving(true), 900);
+    const enterTimer = setTimeout(() => setMounted(true), 20);
+    const leaveTimer = setTimeout(() => setLeaving(true), 780);
     const doneTimer = setTimeout(() => {
       sessionStorage.setItem("ispeak_intro_seen", "1");
       setVisible(false);
-    }, 1200);
+    }, 1080);
 
     return () => {
       clearTimeout(enterTimer);
@@ -43,19 +43,19 @@ export default function IntroSplash() {
         justifyContent: "center",
         zIndex: 9999,
         opacity: leaving ? 0 : 1,
-        transition: "opacity 260ms ease",
+        transition: "opacity 280ms ease",
       }}
     >
       <div
         style={{
           transform: mounted
             ? leaving
-              ? "scale(0.96) rotate(0deg)"
+              ? "scale(0.98) rotate(0deg)"
               : "scale(1) rotate(0deg)"
-            : "scale(0.86) rotate(-8deg)",
+            : "scale(0.92) rotate(-6deg)",
           opacity: mounted ? 1 : 0,
           transition:
-            "transform 700ms cubic-bezier(0.22, 1, 0.36, 1), opacity 450ms ease",
+            "transform 560ms cubic-bezier(0.22, 1, 0.36, 1), opacity 360ms ease",
           filter: "drop-shadow(0 10px 22px rgba(0,0,0,0.12))",
         }}
       >
