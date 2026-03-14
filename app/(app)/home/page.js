@@ -4,6 +4,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { signOut } from "../../../lib/auth";
 import IntroSplash from "../../../components/IntroSplash";
+import InstallPrompt from "../../../components/InstallPrompt";
+import IPhoneInstallHint from "../../../components/IPhoneInstallHint";
 
 export default function Home() {
   async function shareApp() {
@@ -33,6 +35,9 @@ export default function Home() {
       <IntroSplash />
 
       <div className="container">
+        <InstallPrompt />
+        <IPhoneInstallHint />
+
         <div className="card" style={{ textAlign: "center" }}>
           <div style={{ display: "flex", justifyContent: "center", marginBottom: 28 }}>
             <Image
