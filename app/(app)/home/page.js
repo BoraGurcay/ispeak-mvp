@@ -45,7 +45,8 @@ export default function Home() {
       <div
         style={{
           opacity: ready ? 1 : 0,
-          transition: "opacity 320ms ease",
+          transform: ready ? "translateY(0)" : "translateY(10px)",
+          transition: "opacity 320ms ease, transform 320ms ease",
         }}
       >
         <div className="container">
