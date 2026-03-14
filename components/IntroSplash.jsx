@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 
 export default function IntroSplash() {
+  const [mounted, setMounted] = useState(false);
   const [visible, setVisible] = useState(true);
-  const [animate, setAnimate] = useState(false);
+  const [leaving, setLeaving] = useState(false);
 
   useEffect(() => {
     const alreadySeen = sessionStorage.getItem("ispeak_intro_seen");
@@ -15,18 +16,17 @@ export default function IntroSplash() {
       return;
     }
 
-    const raf = requestAnimationFrame(() => {
-      setAnimate(true);
-    });
-
-    const timer = setTimeout(() => {
+    const enterTimer = setTimeout(() => setMounted(true), 30);
+    const leaveTimer = setTimeout(() => setLeaving(true), 900);
+    const doneTimer = setTimeout(() => {
       sessionStorage.setItem("ispeak_intro_seen", "1");
       setVisible(false);
-    }, 1100);
+    }, 1200);
 
     return () => {
-      cancelAnimationFrame(raf);
-      clearTimeout(timer);
+      clearTimeout(enterTimer);
+      clearTimeout(leaveTimer);
+      clearTimeout(doneTimer);
     };
   }, []);
 
@@ -42,17 +42,21 @@ export default function IntroSplash() {
         alignItems: "center",
         justifyContent: "center",
         zIndex: 9999,
+        opacity: leaving ? 0 : 1,
+        transition: "opacity 260ms ease",
       }}
     >
       <div
         style={{
-          transform: animate
-            ? "scale(1) rotate(0deg)"
-            : "scale(0.86) rotate(-10deg)",
-          opacity: animate ? 1 : 0,
+          transform: mounted
+            ? leaving
+              ? "scale(0.96) rotate(0deg)"
+              : "scale(1) rotate(0deg)"
+            : "scale(0.86) rotate(-8deg)",
+          opacity: mounted ? 1 : 0,
           transition:
-            "transform 700ms cubic-bezier(0.22, 1, 0.36, 1), opacity 500ms ease",
-          filter: "drop-shadow(0 10px 20px rgba(0,0,0,0.12))",
+            "transform 700ms cubic-bezier(0.22, 1, 0.36, 1), opacity 450ms ease",
+          filter: "drop-shadow(0 10px 22px rgba(0,0,0,0.12))",
         }}
       >
         <Image
