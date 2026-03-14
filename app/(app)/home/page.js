@@ -5,7 +5,7 @@ import Link from "next/link";
 import { signOut } from "../../../lib/auth";
 import IntroSplash from "../../../components/IntroSplash";
 import InstallPrompt from "../../../components/InstallPrompt";
-import IPhoneInstallHint from "../../../components/TempInstallHint";
+import IPhoneInstallHint from "../../../components/IPhoneInstallHint";
 
 export default function Home() {
   async function shareApp() {
