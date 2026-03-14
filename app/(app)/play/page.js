@@ -83,7 +83,7 @@ function displayTargetTerm(row) {
     return `${native}\n${roman}`;
   }
 
-  return native || roman;
+  return native || roman || "";
 }
 
 export default function PlayPage() {
@@ -521,7 +521,7 @@ export default function PlayPage() {
       <div className="card">
         <div className="h1">Timed Challenge</div>
         <div className="small muted">
-          Translate quickly and accurately before time runs out.
+          Test your recall speed with randomly selected terminology before time runs out.
         </div>
 
         <div className="row" style={{ marginTop: 14, gap: 12, flexWrap: "wrap" }}>
@@ -619,7 +619,7 @@ export default function PlayPage() {
             </div>
           ) : !started ? (
             <div className="small muted">
-              Press Start Challenge to begin. For Arabic, Hindi, Mandarin, Tamil, Punjabi, Greek, Urdu, Ukrainian, and Farsi, native script is shown when available.
+              Press Start Challenge to begin. Choose a language, domain, and direction above to focus your session.
             </div>
           ) : sessionEnded ? (
             <div className="card" style={{ marginTop: 14 }}>
@@ -674,7 +674,10 @@ export default function PlayPage() {
                         <div className="small" style={{ whiteSpace: "pre-line" }}>
                           <strong>Correct:</strong> {m.correctDisplay}
                         </div>
-                        <div className="small muted" style={{ marginTop: 4, whiteSpace: "pre-line" }}>
+                        <div
+                          className="small muted"
+                          style={{ marginTop: 4, whiteSpace: "pre-line" }}
+                        >
                           <strong>Your answer:</strong> {m.selected || "—"}
                         </div>
                       </div>

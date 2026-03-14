@@ -43,7 +43,7 @@ export default function Home() {
         <div className="h1">iSpeak</div>
 
         <div className="muted" style={{ marginTop: 6, fontWeight: 600 }}>
-          Professional Interpreter Training
+          Interpreter Terminology Training
         </div>
 
         <div
@@ -53,11 +53,14 @@ export default function Home() {
             maxWidth: 560,
             marginLeft: "auto",
             marginRight: "auto",
-            lineHeight: 1.6,
+            lineHeight: 1.8,
           }}
         >
-          Practice terminology, build personal glossaries, and improve recall speed
-          across real interpreting domains.
+          Practice legal terminology.
+          <br />
+          Build personal glossaries.
+          <br />
+          Improve interpretation recall speed.
         </div>
 
         <div className="hr" />
@@ -72,7 +75,7 @@ export default function Home() {
           </Link>
 
           <Link className="btn" href="/glossary">
-            Open Glossary
+            Browse Glossary
           </Link>
 
           <Link className="btn" href="/settings">

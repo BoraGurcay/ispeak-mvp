@@ -494,8 +494,8 @@ export default function PracticePage() {
 
   const placeholderText =
     direction === "target_to_en"
-      ? "Type the English translation..."
-      : `Type the ${selectedLangLabel} translation...`;
+      ? "Type the English translation and press Check Answer..."
+      : `Type the ${selectedLangLabel} translation and press Check Answer...`;
 
   return (
     <div className="container">
@@ -505,8 +505,9 @@ export default function PracticePage() {
           className="small muted"
           style={{ marginTop: 6, lineHeight: 1.6, maxWidth: 620 }}
         >
-          Review terminology, type your translation, and check accepted answers in a
-          focused study mode.
+          Review terminology and type the correct translation.
+          <br />
+          Tip: Change language, domain, or direction above to focus your practice.
         </div>
 
         <div className="hr" />

@@ -206,6 +206,7 @@ export default function Glossary() {
 
   const [status, setStatus] = useState("");
   const statusTimerRef = useRef(null);
+  const addFormRef = useRef(null);
 
   const [form, setForm] = useState({
     id: null,
@@ -222,6 +223,10 @@ export default function Glossary() {
     setStatus(msg);
     if (statusTimerRef.current) window.clearTimeout(statusTimerRef.current);
     statusTimerRef.current = window.setTimeout(() => setStatus(""), 1800);
+  }
+
+  function scrollToAddForm() {
+    addFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   useEffect(() => {
@@ -431,7 +436,7 @@ export default function Glossary() {
       notes: it.notes ?? "",
     });
 
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    scrollToAddForm();
   }
 
   async function del(id) {
@@ -495,17 +500,29 @@ export default function Glossary() {
           className="small muted"
           style={{ marginTop: 6, lineHeight: 1.6, maxWidth: 620 }}
         >
-          Browse shared terminology, save important terms to My Terms, and build a
+          Search shared terminology, save important terms to My Terms, and build a
           personal glossary by domain and language.
         </div>
+      </div>
 
-        <div className="hr" />
+      <div style={{ height: 12 }} />
 
+      <div className="card">
         <div className="h2" style={{ marginBottom: 10 }}>
-          Add or Edit Term
+          Browse Terms
         </div>
 
-        <form onSubmit={upsert} className="col" style={{ gap: 12 }}>
+        <div className="small muted" style={{ marginBottom: 12, lineHeight: 1.6 }}>
+          Search first. If a term is missing, you can add it below.
+        </div>
+
+        <div className="row" style={{ gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+          <button type="button" className="btn" onClick={scrollToAddForm}>
+            Add New Term
+          </button>
+        </div>
+
+        <div className="col" style={{ gap: 12 }}>
           <label>
             <div className="muted" style={{ marginBottom: 6 }}>
               Language
@@ -523,111 +540,6 @@ export default function Glossary() {
             </select>
           </label>
 
-          <div className="hr" />
-
-          <label>
-            <div className="muted" style={{ marginBottom: 6 }}>
-              Domain
-            </div>
-            <select
-              className="input"
-              value={form.domain}
-              onChange={(e) => setForm((f) => ({ ...f, domain: e.target.value }))}
-            >
-              {domains.map((d) => (
-                <option key={d.value} value={d.value}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            <div className="muted" style={{ marginBottom: 6 }}>
-              English Term
-            </div>
-            <input
-              className="input"
-              value={form.source_text}
-              onChange={(e) => setForm((f) => ({ ...f, source_text: e.target.value }))}
-              placeholder="e.g., adjournment"
-            />
-          </label>
-
-          <label>
-            <div className="muted" style={{ marginBottom: 6 }}>
-              {targetLabel(targetLang)}
-            </div>
-            <input
-              className="input"
-              value={form.target_text}
-              onChange={(e) => setForm((f) => ({ ...f, target_text: e.target.value }))}
-              placeholder={targetPlaceholder(targetLang)}
-            />
-          </label>
-
-          {usesNative ? (
-            <label>
-              <div className="muted" style={{ marginBottom: 6 }}>
-                {targetNativeLabel(targetLang)}
-              </div>
-              <input
-                className="input"
-                value={form.target_native}
-                onChange={(e) => setForm((f) => ({ ...f, target_native: e.target.value }))}
-                placeholder={targetNativePlaceholder(targetLang)}
-                dir={targetLang === "ar" || targetLang === "ur" || targetLang === "fa" ? "rtl" : "auto"}
-              />
-            </label>
-          ) : null}
-
-          <label>
-            <div className="muted" style={{ marginBottom: 6 }}>
-              Notes
-            </div>
-            <input
-              className="input"
-              value={form.notes}
-              onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-              placeholder="context, caution, dialect notes..."
-            />
-          </label>
-
-          <button className="btn btnPrimary" type="submit">
-            {form.id ? "Save Term" : "Add Term"}
-          </button>
-
-          {form.id ? (
-            <button
-              type="button"
-              className="btn"
-              onClick={() =>
-                setForm({
-                  id: null,
-                  domain: "court",
-                  source_text: "",
-                  target_text: "",
-                  target_native: "",
-                  notes: "",
-                })
-              }
-            >
-              Cancel Edit
-            </button>
-          ) : null}
-
-          {status ? <div className="small muted">{status}</div> : null}
-        </form>
-      </div>
-
-      <div style={{ height: 12 }} />
-
-      <div className="card">
-        <div className="h2" style={{ marginBottom: 10 }}>
-          Browse Terms
-        </div>
-
-        <div className="col" style={{ gap: 12 }}>
           <input
             className="input"
             placeholder="Search glossary..."
@@ -670,7 +582,8 @@ export default function Glossary() {
                   >
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div className="small muted" style={{ marginBottom: 6 }}>
-                        {domainLabel(it.domain)} • {it.__kind === "personal" ? "My Terms" : "Shared"}
+                        {domainLabel(it.domain)} •{" "}
+                        {it.__kind === "personal" ? "My Terms" : "Shared"}
                       </div>
 
                       <div className="h2" style={{ marginBottom: 8 }}>
@@ -731,6 +644,117 @@ export default function Glossary() {
             </div>
           )}
         </div>
+      </div>
+
+      <div style={{ height: 12 }} />
+
+      <div ref={addFormRef} className="card">
+        <div className="h2" style={{ marginBottom: 10 }}>
+          {form.id ? "Edit Term" : "Add a New Term"}
+        </div>
+
+        <div className="small muted" style={{ marginBottom: 12, lineHeight: 1.6 }}>
+          Add your own terminology when you want to build a personal study list.
+        </div>
+
+        <form onSubmit={upsert} className="col" style={{ gap: 12 }}>
+          <label>
+            <div className="muted" style={{ marginBottom: 6 }}>
+              Domain
+            </div>
+            <select
+              className="input"
+              value={form.domain}
+              onChange={(e) => setForm((f) => ({ ...f, domain: e.target.value }))}
+            >
+              {domains.map((d) => (
+                <option key={d.value} value={d.value}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            <div className="muted" style={{ marginBottom: 6 }}>
+              English Term
+            </div>
+            <input
+              className="input"
+              value={form.source_text}
+              onChange={(e) => setForm((f) => ({ ...f, source_text: e.target.value }))}
+              placeholder="e.g., adjournment"
+            />
+          </label>
+
+          <label>
+            <div className="muted" style={{ marginBottom: 6 }}>
+              {targetLabel(targetLang)}
+            </div>
+            <input
+              className="input"
+              value={form.target_text}
+              onChange={(e) => setForm((f) => ({ ...f, target_text: e.target.value }))}
+              placeholder={targetPlaceholder(targetLang)}
+            />
+          </label>
+
+          {usesNative ? (
+            <label>
+              <div className="muted" style={{ marginBottom: 6 }}>
+                {targetNativeLabel(targetLang)}
+              </div>
+              <input
+                className="input"
+                value={form.target_native}
+                onChange={(e) => setForm((f) => ({ ...f, target_native: e.target.value }))}
+                placeholder={targetNativePlaceholder(targetLang)}
+                dir={
+                  targetLang === "ar" || targetLang === "ur" || targetLang === "fa"
+                    ? "rtl"
+                    : "auto"
+                }
+              />
+            </label>
+          ) : null}
+
+          <label>
+            <div className="muted" style={{ marginBottom: 6 }}>
+              Notes
+            </div>
+            <input
+              className="input"
+              value={form.notes}
+              onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+              placeholder="context, caution, dialect notes..."
+            />
+          </label>
+
+          <button className="btn btnPrimary" type="submit">
+            {form.id ? "Save Term" : "Add Term"}
+          </button>
+
+          {form.id ? (
+            <button
+              type="button"
+              className="btn"
+              onClick={() =>
+                setForm({
+                  id: null,
+                  domain: "court",
+                  source_text: "",
+                  target_text: "",
+                  target_native: "",
+                  notes: "",
+                })
+              }
+            >
+              Cancel Edit
+            </button>
+          ) : null}
+
+          {status ? <div className="small muted">{status}</div> : null}
+        </form>
       </div>
     </div>
   );

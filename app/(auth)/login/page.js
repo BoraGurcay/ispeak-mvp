@@ -78,7 +78,7 @@ export default function Login() {
         <div className="h1">iSpeak</div>
 
         <div className="muted" style={{ marginBottom: 12 }}>
-          Professional interpreter training platform
+          Interpreter Terminology Training
         </div>
 
         <div className="row" style={{ marginBottom: 12 }}>
