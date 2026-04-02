@@ -25,6 +25,11 @@ const languages = [
   { value: "ur", label: "🇵🇰 Urdu" },
   { value: "uk", label: "🇺🇦 Ukrainian" },
   { value: "fa", label: "🇮🇷 Farsi" },
+  { value: "ru", label: "🇷🇺 Russian" },
+  { value: "ro", label: "🇷🇴 Romanian" },
+  { value: "hu", label: "🇭🇺 Hungarian" },
+  { value: "pl", label: "🇵🇱 Polish" },
+  { value: "vi", label: "🇻🇳 Vietnamese" },
 ];
 
 const LANGS_WITH_NATIVE = new Set([
@@ -37,7 +42,31 @@ const LANGS_WITH_NATIVE = new Set([
   "ur",
   "uk",
   "fa",
+  "ru",
 ]);
+
+const SUPPORTED_LANGS = [
+  "tr",
+  "fr",
+  "es",
+  "pt",
+  "hi",
+  "ar",
+  "zh",
+  "ta",
+  "pa",
+  "tl",
+  "so",
+  "el",
+  "ur",
+  "uk",
+  "fa",
+  "ru",
+  "ro",
+  "hu",
+  "pl",
+  "vi",
+];
 
 function domainLabel(value) {
   const d = domains.find((x) => x.value === value);
@@ -80,6 +109,16 @@ function targetLabel(targetLang) {
       return "Ukrainian (Roman)";
     case "fa":
       return "Farsi (Roman)";
+    case "ru":
+      return "Russian (Roman)";
+    case "ro":
+      return "Romanian";
+    case "hu":
+      return "Hungarian";
+    case "pl":
+      return "Polish";
+    case "vi":
+      return "Vietnamese";
     default:
       return "Translation";
   }
@@ -105,6 +144,8 @@ function targetNativeLabel(targetLang) {
       return "Ukrainian (Native)";
     case "fa":
       return "Farsi (Native)";
+    case "ru":
+      return "Russian (Native)";
     default:
       return "Native (optional)";
   }
@@ -142,6 +183,16 @@ function targetPlaceholder(targetLang) {
       return "e.g., sud / advokat";
     case "fa":
       return "e.g., dadgah / vakil";
+    case "ru":
+      return "e.g., sud / advokat";
+    case "ro":
+      return "e.g., instanță / avocat";
+    case "hu":
+      return "e.g., bíróság / ügyvéd";
+    case "pl":
+      return "e.g., sąd / adwokat";
+    case "vi":
+      return "e.g., tòa án / luật sư";
     default:
       return "e.g., translation";
   }
@@ -167,6 +218,8 @@ function targetNativePlaceholder(targetLang) {
       return "e.g., суд / адвокат";
     case "fa":
       return "e.g., دادگاه / وکیل";
+    case "ru":
+      return "e.g., суд / адвокат";
     default:
       return "e.g., native script";
   }
@@ -193,6 +246,7 @@ function dedupeAndMergeTargets(a, b) {
     seen.add(key);
     out.push(p);
   }
+
   return out.join(" / ");
 }
 
@@ -231,25 +285,7 @@ export default function Glossary() {
 
   useEffect(() => {
     const saved = localStorage.getItem("ispeak_target_lang");
-    if (
-      [
-        "tr",
-        "fr",
-        "es",
-        "pt",
-        "hi",
-        "ar",
-        "zh",
-        "ta",
-        "pa",
-        "tl",
-        "so",
-        "el",
-        "ur",
-        "uk",
-        "fa",
-      ].includes(saved)
-    ) {
+    if (SUPPORTED_LANGS.includes(saved)) {
       setTargetLang(saved);
     }
   }, []);

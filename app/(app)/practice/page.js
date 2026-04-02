@@ -24,7 +24,7 @@ function stripDiacritics(s) {
 * Forgiving normalization that works for:
 * - Latin scripts
 * - Roman Arabic with digits (3/7)
-* - Native scripts like Arabic / Hindi / Mandarin / Tamil / Punjabi / Greek / Urdu / Ukrainian / Farsi
+* - Native scripts like Arabic / Hindi / Mandarin / Tamil / Punjabi / Greek / Urdu / Ukrainian / Farsi / Russian
 */
 function normalizeAnswer(s) {
   return stripDiacritics(stripBracketed(s))
@@ -104,6 +104,34 @@ const LANGUAGES = [
   { value: "ur", label: "🇵🇰 Urdu" },
   { value: "uk", label: "🇺🇦 Ukrainian" },
   { value: "fa", label: "🇮🇷 Farsi" },
+  { value: "ru", label: "🇷🇺 Russian" },
+  { value: "ro", label: "🇷🇴 Romanian" },
+  { value: "hu", label: "🇭🇺 Hungarian" },
+  { value: "pl", label: "🇵🇱 Polish" },
+  { value: "vi", label: "🇻🇳 Vietnamese" },
+];
+
+const SUPPORTED_LANGS = [
+  "tr",
+  "fr",
+  "es",
+  "pt",
+  "hi",
+  "ar",
+  "zh",
+  "ta",
+  "pa",
+  "tl",
+  "so",
+  "el",
+  "ur",
+  "uk",
+  "fa",
+  "ru",
+  "ro",
+  "hu",
+  "pl",
+  "vi",
 ];
 
 const DOMAINS = [
@@ -187,10 +215,7 @@ export default function PracticePage() {
 
   useEffect(() => {
     const saved = localStorage.getItem("ispeak_target_lang");
-    if (
-      saved &&
-      ["tr", "fr", "es", "pt", "hi", "ar", "zh", "ta", "pa", "tl", "so", "el", "ur", "uk", "fa"].includes(saved)
-    ) {
+    if (saved && SUPPORTED_LANGS.includes(saved)) {
       setLang(saved);
     }
 
@@ -668,7 +693,8 @@ export default function PracticePage() {
 
                     {direction === "en_to_target" &&
                     feedback.expectedNative &&
-                    normalizeAnswer(feedback.expectedNative) !== normalizeAnswer(feedback.matched) ? (
+                    normalizeAnswer(feedback.expectedNative) !==
+                      normalizeAnswer(feedback.matched || "") ? (
                       <div
                         style={{
                           marginTop: 4,
@@ -708,4 +734,3 @@ export default function PracticePage() {
     </div>
   );
 }
-

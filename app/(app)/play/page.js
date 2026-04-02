@@ -23,6 +23,34 @@ const LANGUAGE_OPTIONS = [
   { code: "ur", label: "🇵🇰 Urdu" },
   { code: "uk", label: "🇺🇦 Ukrainian" },
   { code: "fa", label: "🇮🇷 Farsi" },
+  { code: "ru", label: "🇷🇺 Russian" },
+  { code: "ro", label: "🇷🇴 Romanian" },
+  { code: "hu", label: "🇭🇺 Hungarian" },
+  { code: "pl", label: "🇵🇱 Polish" },
+  { code: "vi", label: "🇻🇳 Vietnamese" },
+];
+
+const SUPPORTED_LANGS = [
+  "tr",
+  "fr",
+  "es",
+  "pt",
+  "hi",
+  "ar",
+  "zh",
+  "ta",
+  "pa",
+  "tl",
+  "so",
+  "el",
+  "ur",
+  "uk",
+  "fa",
+  "ru",
+  "ro",
+  "hu",
+  "pl",
+  "vi",
 ];
 
 const DOMAIN_OPTIONS = [
@@ -124,6 +152,11 @@ export default function PlayPage() {
     tickAudioRef.current = new Audio("/sounds/tick.mp3");
     tickAudioRef.current.loop = true;
 
+    const savedLang = localStorage.getItem("ispeak_target_lang");
+    if (savedLang && SUPPORTED_LANGS.includes(savedLang)) {
+      setLang(savedLang);
+    }
+
     const savedDirection = localStorage.getItem("ispeak_direction");
     if (savedDirection && ["en_to_target", "target_to_en"].includes(savedDirection)) {
       setDirection(savedDirection);
@@ -135,6 +168,10 @@ export default function PlayPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem("ispeak_target_lang", lang);
+  }, [lang]);
 
   useEffect(() => {
     localStorage.setItem("ispeak_direction", direction);
@@ -216,12 +253,12 @@ export default function PlayPage() {
       stopAllTimers();
       stopTick();
 
-      const q = supabase
+      let q = supabase
         .from(TERMS_TABLE)
         .select("source_text, target_text, target_native, domain, difficulty, target_lang")
         .eq("target_lang", lang);
 
-      if (domain !== "all") q.eq("domain", domain);
+      if (domain !== "all") q = q.eq("domain", domain);
 
       const { data, error } = await q.limit(700);
 
@@ -246,7 +283,6 @@ export default function PlayPage() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lang, domain]);
 
   const canPlay = useMemo(() => pool.length >= 4, [pool.length]);
@@ -619,7 +655,8 @@ export default function PlayPage() {
             </div>
           ) : !started ? (
             <div className="small muted">
-              Press Start Challenge to begin. Choose a language, domain, and direction above to focus your session.
+              Press Start Challenge to begin. Choose a language, domain, and direction above to
+              focus your session.
             </div>
           ) : sessionEnded ? (
             <div className="card" style={{ marginTop: 14 }}>
