@@ -1,19 +1,35 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { supabase } from "../../../lib/supabaseClient";
 import PushTestButton from "../../../components/PushTestButton";
+
+const DOMAIN_LABELS = {
+  court: "Court",
+  immigration: "Immigration",
+  family: "Family",
+  "law enforcement/street language": "Law Enforcement / Street Language",
+  "financial/fraud/business": "Financial / Fraud / Business",
+  "community/social services": "Community / Social Services",
+};
+
+function domainLabel(value) {
+  return DOMAIN_LABELS[value] || value || "Unknown";
+}
 
 export default function SettingsPage() {
   const [textSize, setTextSize] = useState("normal");
   const [sessions, setSessions] = useState([]);
   const [loadingSessions, setLoadingSessions] = useState(true);
+  const [profile, setProfile] = useState(null);
 
   useEffect(() => {
     const v = localStorage.getItem("ispeak_text_size") || "normal";
     setTextSize(v);
     apply(v);
     loadSessions();
+    loadProfile();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -21,6 +37,31 @@ export default function SettingsPage() {
     const root = document.documentElement;
     root.style.fontSize = v === "large" ? "18px" : "16px";
     localStorage.setItem("ispeak_text_size", v);
+  }
+
+  async function loadProfile() {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("full_name,current_streak,longest_streak,preferred_target_lang")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (error) {
+        console.error("Profile summary error:", error);
+        return;
+      }
+
+      setProfile(data || null);
+    } catch (err) {
+      console.error("Unexpected profile summary error:", err);
+    }
   }
 
   async function loadSessions() {
@@ -71,7 +112,32 @@ export default function SettingsPage() {
 
         <div className="hr" />
 
-        {/* DISPLAY */}
+        <div className="h2" style={{ marginBottom: 10 }}>
+          Profile
+        </div>
+
+        {profile ? (
+          <div className="card" style={{ padding: 12, marginBottom: 12 }}>
+            <div style={{ fontWeight: 700 }}>{profile.full_name || "Your Profile"}</div>
+            <div className="small muted" style={{ marginTop: 4 }}>
+              Current streak: {profile.current_streak || 0} • Longest streak: {profile.longest_streak || 0}
+            </div>
+            <div className="small muted" style={{ marginTop: 4 }}>
+              Preferred language: {(profile.preferred_target_lang || "").toUpperCase() || "—"}
+            </div>
+          </div>
+        ) : (
+          <div className="small muted" style={{ marginBottom: 12 }}>
+            You have not completed your profile yet.
+          </div>
+        )}
+
+        <Link href="/profile" className="btn btnPrimary">
+          Open My Profile
+        </Link>
+
+        <div className="hr" />
+
         <div className="h2" style={{ marginBottom: 10 }}>
           Display
         </div>
@@ -95,7 +161,6 @@ export default function SettingsPage() {
 
         <div className="hr" />
 
-        {/* NOTIFICATIONS */}
         <div className="h2" style={{ marginBottom: 10 }}>
           Notifications
         </div>
@@ -108,7 +173,6 @@ export default function SettingsPage() {
 
         <div className="hr" />
 
-        {/* FEEDBACK */}
         <div className="h2" style={{ marginBottom: 10 }}>
           Feedback
         </div>
@@ -124,7 +188,6 @@ export default function SettingsPage() {
 
         <div className="hr" />
 
-        {/* TRAINING HISTORY */}
         <div className="h2" style={{ marginBottom: 10 }}>
           Training History
         </div>
@@ -146,7 +209,7 @@ export default function SettingsPage() {
                   <div className="small muted">{date}</div>
 
                   <div style={{ marginTop: 4 }}>
-                    {String(s.language).toUpperCase()} • {s.domain}
+                    {String(s.language).toUpperCase()} • {domainLabel(s.domain)}
                   </div>
 
                   <div className="small">

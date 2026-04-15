@@ -4,22 +4,48 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { signOut } from "../../../lib/auth";
+import { supabase } from "../../../lib/supabaseClient";
 import IntroSplash from "../../../components/IntroSplash";
 import InstallPrompt from "../../../components/InstallPrompt";
 import IPhoneInstallHint from "../../../components/IPhoneInstallHint";
 
 export default function Home() {
   const [ready, setReady] = useState(false);
+  const [profile, setProfile] = useState(null);
 
   useEffect(() => {
     const t = setTimeout(() => setReady(true), 950);
     return () => clearTimeout(t);
   }, []);
 
+  useEffect(() => {
+    loadProfileSummary();
+  }, []);
+
+  async function loadProfileSummary() {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) return;
+
+      const { data } = await supabase
+        .from("profiles")
+        .select("full_name,current_streak,longest_streak")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      setProfile(data || null);
+    } catch (err) {
+      console.error("Home profile load error:", err);
+    }
+  }
+
   async function shareApp() {
     const url = "https://ispeaktraining.com";
     const text =
-      "iSpeak — Interpreter terminology training.\n\nPractice court, immigration, and family terminology and build your own glossary.\n\nhttps://ispeaktraining.com";
+      "iSpeak — Interpreter terminology training.\n\nPractice legal and real-world terminology, build your own glossary, and improve recall speed.\n\nhttps://ispeaktraining.com";
 
     try {
       if (navigator.share) {
@@ -37,6 +63,9 @@ export default function Home() {
       console.error("Share failed:", err);
     }
   }
+
+  const firstName =
+    (profile?.full_name || "").trim().split(" ").filter(Boolean)[0] || "there";
 
   return (
     <>
@@ -75,13 +104,13 @@ export default function Home() {
               className="small muted"
               style={{
                 marginTop: 8,
-                maxWidth: 560,
+                maxWidth: 620,
                 marginLeft: "auto",
                 marginRight: "auto",
                 lineHeight: 1.8,
               }}
             >
-              Practice legal terminology.
+              Practice legal and real-world terminology.
               <br />
               Build personal glossaries.
               <br />
@@ -103,6 +132,10 @@ export default function Home() {
                 Browse Glossary
               </Link>
 
+              <Link className="btn" href="/profile">
+                My Profile
+              </Link>
+
               <Link className="btn" href="/settings">
                 Settings
               </Link>
@@ -114,6 +147,21 @@ export default function Home() {
               <button className="btn btnDanger" onClick={() => signOut()}>
                 Log Out
               </button>
+            </div>
+
+            <div style={{ height: 18 }} />
+
+            <div className="card" style={{ maxWidth: 560, margin: "0 auto", textAlign: "left" }}>
+              <div className="h2" style={{ marginBottom: 8 }}>
+                Welcome back, {firstName}
+              </div>
+              <div className="small muted" style={{ lineHeight: 1.7 }}>
+                🔥 Current streak: {profile?.current_streak || 0} day
+                {(profile?.current_streak || 0) === 1 ? "" : "s"}
+                <br />
+                🏆 Longest streak: {profile?.longest_streak || 0} day
+                {(profile?.longest_streak || 0) === 1 ? "" : "s"}
+              </div>
             </div>
 
             <div style={{ height: 18 }} />
@@ -147,7 +195,7 @@ export default function Home() {
             <div
               style={{
                 textAlign: "left",
-                maxWidth: 560,
+                maxWidth: 620,
                 margin: "0 auto",
               }}
             >
@@ -171,9 +219,20 @@ export default function Home() {
               Training Focus
             </div>
 
-            <div className="small muted" style={{ lineHeight: 1.7 }}>
-              Build terminology recall, strengthen speed and accuracy, and review weak
-              terms across court, immigration, and family interpretation.
+            <div className="small muted" style={{ lineHeight: 1.8 }}>
+              Build terminology recall, strengthen speed and accuracy, and review weak terms across:
+              <br />
+              • Court
+              <br />
+              • Immigration
+              <br />
+              • Family
+              <br />
+              • Law Enforcement / Street Language
+              <br />
+              • Financial / Fraud / Business
+              <br />
+              • Community / Social Services
             </div>
           </div>
 

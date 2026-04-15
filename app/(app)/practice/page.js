@@ -3,8 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 
-// --------- helpers ---------
-
 function stripBracketed(s) {
   return (s || "")
     .replace(/\([^)]*\)/g, " ")
@@ -20,12 +18,6 @@ function stripDiacritics(s) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
-/**
-* Forgiving normalization that works for:
-* - Latin scripts
-* - Roman Arabic with digits (3/7)
-* - Native scripts like Arabic / Hindi / Mandarin / Tamil / Punjabi / Greek / Urdu / Ukrainian / Farsi / Russian
-*/
 function normalizeAnswer(s) {
   return stripDiacritics(stripBracketed(s))
     .toLowerCase()
@@ -86,8 +78,6 @@ function uniqByNorm(rawList) {
   return out;
 }
 
-// --------- config ---------
-
 const LANGUAGES = [
   { value: "tr", label: "🇹🇷 Turkish" },
   { value: "fr", label: "🇫🇷 French" },
@@ -112,26 +102,7 @@ const LANGUAGES = [
 ];
 
 const SUPPORTED_LANGS = [
-  "tr",
-  "fr",
-  "es",
-  "pt",
-  "hi",
-  "ar",
-  "zh",
-  "ta",
-  "pa",
-  "tl",
-  "so",
-  "el",
-  "ur",
-  "uk",
-  "fa",
-  "ru",
-  "ro",
-  "hu",
-  "pl",
-  "vi",
+  "tr","fr","es","pt","hi","ar","zh","ta","pa","tl","so","el","ur","uk","fa","ru","ro","hu","pl","vi",
 ];
 
 const DOMAINS = [
@@ -139,6 +110,9 @@ const DOMAINS = [
   { value: "court", label: "Court" },
   { value: "immigration", label: "Immigration" },
   { value: "family", label: "Family" },
+  { value: "law enforcement/street language", label: "Law Enforcement / Street Language" },
+  { value: "financial/fraud/business", label: "Financial / Fraud / Business" },
+  { value: "community/social services", label: "Community / Social Services" },
 ];
 
 const DIRECTIONS = [
@@ -148,7 +122,7 @@ const DIRECTIONS = [
 
 function domainLabel(value) {
   const d = DOMAINS.find((x) => x.value === value);
-  return d?.label ?? "Court";
+  return d?.label ?? "Unknown";
 }
 
 function isRtlLang(lang) {
@@ -167,7 +141,7 @@ export default function PracticePage() {
   const inputRef = useRef(null);
 
   const [lang, setLang] = useState("tr");
-  const [mode, setMode] = useState("normal"); // normal | hard | weak
+  const [mode, setMode] = useState("normal");
   const [domain, setDomain] = useState("all");
   const [direction, setDirection] = useState("en_to_target");
 
@@ -175,8 +149,6 @@ export default function PracticePage() {
   const [term, setTerm] = useState(null);
 
   const [answer, setAnswer] = useState("");
-
-  // feedback: { ok, accepted, matched, expectedNative }
   const [feedback, setFeedback] = useState(null);
 
   const [score, setScore] = useState(0);
@@ -185,7 +157,6 @@ export default function PracticePage() {
   const [loading, setLoading] = useState(false);
   const [fatalError, setFatalError] = useState(null);
 
-  // ---------- Sound ----------
   const [soundOn, setSoundOn] = useState(true);
   const correctAudioRef = useRef(null);
   const wrongAudioRef = useRef(null);
@@ -211,6 +182,20 @@ export default function PracticePage() {
       const p = a.play();
       if (p && typeof p.catch === "function") p.catch(() => {});
     } catch {}
+  }
+
+  async function touchProfileStreak() {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) return;
+
+      await supabase.rpc("touch_profile_streak", { p_user_id: user.id });
+    } catch (err) {
+      console.error("Practice streak touch error:", err);
+    }
   }
 
   useEffect(() => {
@@ -399,7 +384,7 @@ export default function PracticePage() {
     setTimeout(() => inputRef.current?.focus(), 50);
   }
 
-  function checkAnswer() {
+  async function checkAnswer() {
     if (!term) return;
 
     const userRaw = answer || "";
@@ -433,6 +418,7 @@ export default function PracticePage() {
         });
         setScore((s) => s + 1);
         setStreak((s) => s + 1);
+        await touchProfileStreak();
       } else {
         setFeedback({
           ok: false,
@@ -487,6 +473,7 @@ export default function PracticePage() {
       });
       setScore((s) => s + 1);
       setStreak((s) => s + 1);
+      await touchProfileStreak();
     } else {
       setFeedback({
         ok: false,
@@ -526,10 +513,7 @@ export default function PracticePage() {
     <div className="container">
       <div className="card">
         <div className="h1">Practice</div>
-        <div
-          className="small muted"
-          style={{ marginTop: 6, lineHeight: 1.6, maxWidth: 620 }}
-        >
+        <div className="small muted" style={{ marginTop: 6, lineHeight: 1.6, maxWidth: 620 }}>
           Review terminology and type the correct translation.
           <br />
           Tip: Change language, domain, or direction above to focus your practice.
@@ -673,7 +657,6 @@ export default function PracticePage() {
                 {feedback.ok ? (
                   <div>
                     <div style={{ fontWeight: 700 }}>Correct ✓</div>
-
                     {feedback.matched ? (
                       <div
                         className="muted"

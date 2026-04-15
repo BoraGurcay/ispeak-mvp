@@ -31,26 +31,7 @@ const LANGUAGE_OPTIONS = [
 ];
 
 const SUPPORTED_LANGS = [
-  "tr",
-  "fr",
-  "es",
-  "pt",
-  "hi",
-  "ar",
-  "zh",
-  "ta",
-  "pa",
-  "tl",
-  "so",
-  "el",
-  "ur",
-  "uk",
-  "fa",
-  "ru",
-  "ro",
-  "hu",
-  "pl",
-  "vi",
+  "tr","fr","es","pt","hi","ar","zh","ta","pa","tl","so","el","ur","uk","fa","ru","ro","hu","pl","vi",
 ];
 
 const DOMAIN_OPTIONS = [
@@ -58,6 +39,9 @@ const DOMAIN_OPTIONS = [
   { value: "court", label: "Court" },
   { value: "immigration", label: "Immigration" },
   { value: "family", label: "Family" },
+  { value: "law enforcement/street language", label: "Law Enforcement / Street Language" },
+  { value: "financial/fraud/business", label: "Financial / Fraud / Business" },
+  { value: "community/social services", label: "Community / Social Services" },
 ];
 
 const DIRECTION_OPTIONS = [
@@ -236,6 +220,20 @@ export default function PlayPage() {
       }
     } catch (err) {
       console.error("Unexpected weak term save error:", err);
+    }
+  }
+
+  async function touchProfileStreak() {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) return;
+
+      await supabase.rpc("touch_profile_streak", { p_user_id: user.id });
+    } catch (err) {
+      console.error("Play streak touch error:", err);
     }
   }
 
@@ -489,6 +487,10 @@ export default function PlayPage() {
         accuracy,
       });
 
+      if (!error && total > 0) {
+        await touchProfileStreak();
+      }
+
       if (error) {
         console.error("Error saving play session:", error);
       }
@@ -711,10 +713,7 @@ export default function PlayPage() {
                         <div className="small" style={{ whiteSpace: "pre-line" }}>
                           <strong>Correct:</strong> {m.correctDisplay}
                         </div>
-                        <div
-                          className="small muted"
-                          style={{ marginTop: 4, whiteSpace: "pre-line" }}
-                        >
+                        <div className="small muted" style={{ marginTop: 4, whiteSpace: "pre-line" }}>
                           <strong>Your answer:</strong> {m.selected || "—"}
                         </div>
                       </div>

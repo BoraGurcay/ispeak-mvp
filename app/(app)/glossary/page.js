@@ -7,6 +7,9 @@ const domains = [
   { value: "court", label: "Court" },
   { value: "immigration", label: "Immigration" },
   { value: "family", label: "Family" },
+  { value: "law enforcement/street language", label: "Law Enforcement / Street Language" },
+  { value: "financial/fraud/business", label: "Financial / Fraud / Business" },
+  { value: "community/social services", label: "Community / Social Services" },
 ];
 
 const languages = [
@@ -33,39 +36,11 @@ const languages = [
 ];
 
 const LANGS_WITH_NATIVE = new Set([
-  "ar",
-  "hi",
-  "zh",
-  "ta",
-  "pa",
-  "el",
-  "ur",
-  "uk",
-  "fa",
-  "ru",
+  "ar","hi","zh","ta","pa","el","ur","uk","fa","ru",
 ]);
 
 const SUPPORTED_LANGS = [
-  "tr",
-  "fr",
-  "es",
-  "pt",
-  "hi",
-  "ar",
-  "zh",
-  "ta",
-  "pa",
-  "tl",
-  "so",
-  "el",
-  "ur",
-  "uk",
-  "fa",
-  "ru",
-  "ro",
-  "hu",
-  "pl",
-  "vi",
+  "tr","fr","es","pt","hi","ar","zh","ta","pa","tl","so","el","ur","uk","fa","ru","ro","hu","pl","vi",
 ];
 
 function domainLabel(value) {
@@ -79,149 +54,85 @@ function normalizeKey(s) {
 
 function targetLabel(targetLang) {
   switch (targetLang) {
-    case "tr":
-      return "Turkish";
-    case "fr":
-      return "French";
-    case "es":
-      return "Spanish";
-    case "pt":
-      return "Portuguese";
-    case "hi":
-      return "Hindi (Roman)";
-    case "ar":
-      return "Arabic (Roman)";
-    case "zh":
-      return "Mandarin (Pinyin)";
-    case "ta":
-      return "Tamil (Roman)";
-    case "pa":
-      return "Punjabi (Roman)";
-    case "tl":
-      return "Tagalog";
-    case "so":
-      return "Somali";
-    case "el":
-      return "Greek (Roman)";
-    case "ur":
-      return "Urdu (Roman)";
-    case "uk":
-      return "Ukrainian (Roman)";
-    case "fa":
-      return "Farsi (Roman)";
-    case "ru":
-      return "Russian (Roman)";
-    case "ro":
-      return "Romanian";
-    case "hu":
-      return "Hungarian";
-    case "pl":
-      return "Polish";
-    case "vi":
-      return "Vietnamese";
-    default:
-      return "Translation";
+    case "tr": return "Turkish";
+    case "fr": return "French";
+    case "es": return "Spanish";
+    case "pt": return "Portuguese";
+    case "hi": return "Hindi (Roman)";
+    case "ar": return "Arabic (Roman)";
+    case "zh": return "Mandarin (Pinyin)";
+    case "ta": return "Tamil (Roman)";
+    case "pa": return "Punjabi (Roman)";
+    case "tl": return "Tagalog";
+    case "so": return "Somali";
+    case "el": return "Greek (Roman)";
+    case "ur": return "Urdu (Roman)";
+    case "uk": return "Ukrainian (Roman)";
+    case "fa": return "Farsi (Roman)";
+    case "ru": return "Russian (Roman)";
+    case "ro": return "Romanian";
+    case "hu": return "Hungarian";
+    case "pl": return "Polish";
+    case "vi": return "Vietnamese";
+    default: return "Translation";
   }
 }
 
 function targetNativeLabel(targetLang) {
   switch (targetLang) {
-    case "ar":
-      return "Arabic (Native)";
-    case "hi":
-      return "Hindi (Native)";
-    case "zh":
-      return "Mandarin (Native)";
-    case "ta":
-      return "Tamil (Native)";
-    case "pa":
-      return "Punjabi (Native)";
-    case "el":
-      return "Greek (Native)";
-    case "ur":
-      return "Urdu (Native)";
-    case "uk":
-      return "Ukrainian (Native)";
-    case "fa":
-      return "Farsi (Native)";
-    case "ru":
-      return "Russian (Native)";
-    default:
-      return "Native (optional)";
+    case "ar": return "Arabic (Native)";
+    case "hi": return "Hindi (Native)";
+    case "zh": return "Mandarin (Native)";
+    case "ta": return "Tamil (Native)";
+    case "pa": return "Punjabi (Native)";
+    case "el": return "Greek (Native)";
+    case "ur": return "Urdu (Native)";
+    case "uk": return "Ukrainian (Native)";
+    case "fa": return "Farsi (Native)";
+    case "ru": return "Russian (Native)";
+    default: return "Native (optional)";
   }
 }
 
 function targetPlaceholder(targetLang) {
   switch (targetLang) {
-    case "tr":
-      return "e.g., duruşmanın ertelenmesi";
-    case "fr":
-      return "e.g., ajournement";
-    case "es":
-      return "e.g., aplazamiento";
-    case "pt":
-      return "e.g., adiamento";
-    case "hi":
-      return "e.g., nyayalaya / vakil";
-    case "ar":
-      return "e.g., mahkama / 3am / 7aqq";
-    case "zh":
-      return "e.g., fayuan / lüshi";
-    case "ta":
-      return "e.g., neethimandram / vakkeel";
-    case "pa":
-      return "e.g., adaalat / wakeel";
-    case "tl":
-      return "e.g., hukuman / pagdinig";
-    case "so":
-      return "e.g., maxkamad / qareen";
-    case "el":
-      return "e.g., dikastirio / diki";
-    case "ur":
-      return "e.g., adaalat / wakeel";
-    case "uk":
-      return "e.g., sud / advokat";
-    case "fa":
-      return "e.g., dadgah / vakil";
-    case "ru":
-      return "e.g., sud / advokat";
-    case "ro":
-      return "e.g., instanță / avocat";
-    case "hu":
-      return "e.g., bíróság / ügyvéd";
-    case "pl":
-      return "e.g., sąd / adwokat";
-    case "vi":
-      return "e.g., tòa án / luật sư";
-    default:
-      return "e.g., translation";
+    case "tr": return "e.g., duruşmanın ertelenmesi";
+    case "fr": return "e.g., ajournement";
+    case "es": return "e.g., aplazamiento";
+    case "pt": return "e.g., adiamento";
+    case "hi": return "e.g., nyayalaya / vakil";
+    case "ar": return "e.g., mahkama / 3am / 7aqq";
+    case "zh": return "e.g., fayuan / lüshi";
+    case "ta": return "e.g., neethimandram / vakkeel";
+    case "pa": return "e.g., adaalat / wakeel";
+    case "tl": return "e.g., hukuman / pagdinig";
+    case "so": return "e.g., maxkamad / qareen";
+    case "el": return "e.g., dikastirio / diki";
+    case "ur": return "e.g., adaalat / wakeel";
+    case "uk": return "e.g., sud / advokat";
+    case "fa": return "e.g., dadgah / vakil";
+    case "ru": return "e.g., sud / advokat";
+    case "ro": return "e.g., instanță / avocat";
+    case "hu": return "e.g., bíróság / ügyvéd";
+    case "pl": return "e.g., sąd / adwokat";
+    case "vi": return "e.g., tòa án / luật sư";
+    default: return "e.g., translation";
   }
 }
 
 function targetNativePlaceholder(targetLang) {
   switch (targetLang) {
-    case "ar":
-      return "e.g., محكمة / عام / حق";
-    case "hi":
-      return "e.g., न्यायालय / वकील";
-    case "zh":
-      return "e.g., 法院 / 律师";
-    case "ta":
-      return "e.g., நீதிமன்றம் / வழக்கறிஞர்";
-    case "pa":
-      return "e.g., ਅਦਾਲਤ / ਵਕੀਲ";
-    case "el":
-      return "e.g., δικαστήριο / δικηγόρος";
-    case "ur":
-      return "e.g., عدالت / وکیل";
-    case "uk":
-      return "e.g., суд / адвокат";
-    case "fa":
-      return "e.g., دادگاه / وکیل";
-    case "ru":
-      return "e.g., суд / адвокат";
-    default:
-      return "e.g., native script";
+    case "ar": return "e.g., محكمة / عام / حق";
+    case "hi": return "e.g., न्यायालय / वकील";
+    case "zh": return "e.g., 法院 / 律师";
+    case "ta": return "e.g., நீதிமன்றம் / வழக்கறிஞர்";
+    case "pa": return "e.g., ਅਦਾਲਤ / ਵਕੀਲ";
+    case "el": return "e.g., δικαστήριο / δικηγόρος";
+    case "ur": return "e.g., عدالت / وکیل";
+    case "uk": return "e.g., суд / адвокат";
+    case "fa": return "e.g., دادگاه / وکیل";
+    case "ru": return "e.g., суд / адвокат";
+    default: return "e.g., native script";
   }
 }
 
@@ -428,7 +339,7 @@ export default function Glossary() {
     const payload = {
       user_id: user.id,
       source_lang: "en",
-      target_lang: targetLang,
+      target_lang,
       domain: form.domain,
       source_text: form.source_text.trim(),
       target_text: form.target_text.trim(),
@@ -532,10 +443,7 @@ export default function Glossary() {
     <div className="container">
       <div className="card">
         <div className="h1">Glossary</div>
-        <div
-          className="small muted"
-          style={{ marginTop: 6, lineHeight: 1.6, maxWidth: 620 }}
-        >
+        <div className="small muted" style={{ marginTop: 6, lineHeight: 1.6, maxWidth: 620 }}>
           Search shared terminology, save important terms to My Terms, and build a
           personal glossary by domain and language.
         </div>
